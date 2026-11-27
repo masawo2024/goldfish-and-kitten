@@ -1596,20 +1596,23 @@
         }
 
         // --- FLUSH, ROUND, LARGER 3D "PAKU-PAKU" MOUTH ---
-        // Lies flush on the front face of the snout (never protruding), opening into a big round "O".
-        if (noseN.z > -0.10) {
+        // Follows the convex rounded snout curve (never forming a "<" chevron in side view).
+        if (noseN.z > 0.02) {
+          const frontness = clamp(noseN.z, 0, 1);
           const mouthRx = L * (0.024 + 0.013 * mouthOpen);
-          const mouthRy = L * (0.012 + 0.032 * mouthOpen);
+          const mouthRy = L * (0.012 + 0.030 * mouthOpen);
           const mouthCenterY = L * 0.004;
           const mouthPts = [];
           let mzSum = 0;
           const M_STEPS = 8;
           for (let k = 0; k < M_STEPS; k++) {
             const ang = (k / M_STEPS) * Math.PI * 2;
-            const cx = Math.cos(ang) * mouthRx;
-            const cy = mouthCenterY + Math.sin(ang) * mouthRy;
-            // Slightly follow the gentle curvature of the front cap so it sits 100% flush
-            const flushFwd = L * 0.005 * (1 - 0.5 * (Math.cos(ang) * Math.cos(ang)));
+            const ca = Math.cos(ang);
+            const sa = Math.sin(ang);
+            const cx = ca * mouthRx;
+            const cy = mouthCenterY + sa * mouthRy;
+            // Convex spherical cap offset: center is furthest forward, top/bottom curve BACK with the snout!
+            const flushFwd = L * (0.003 - 0.0045 * (sa * sa) - 0.002 * (ca * ca));
             const pt = toCamera(
               noseFrame.sp.lx + noseFrame.fx * flushFwd + noseFrame.latX * cx,
               cy,
@@ -1623,6 +1626,7 @@
             kind: 'mouth',
             pts: mouthPts,
             open: mouthOpen,
+            frontness,
             scale: L / 68,
             lipCol: capCol
           });
@@ -1926,6 +1930,7 @@
             // Flush, round, larger 3D projected mouth on the front face of the head
             const pts = item.pts;
             ctx.save();
+            ctx.globalAlpha *= smoothstep(0.02, 0.32, item.frontness);
             ctx.beginPath();
             const last = pts[pts.length - 1];
             ctx.moveTo((last.sx + pts[0].sx) * 0.5, (last.sy + pts[0].sy) * 0.5);
