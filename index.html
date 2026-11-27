@@ -1244,10 +1244,10 @@
       // ============================================================
       const FISH_STATIONS = [0.0, 0.05, 0.14, 0.25, 0.40, 0.58, 0.76, 0.90, 1.0];
       // True goldfish proportions: laterally compressed (~half width of a pufferfish!),
-      // with a natural rounded goldfish snout, graceful arched back, and slender caudal peduncle.
-      const FISH_HALF_W   = [0.026, 0.056, 0.092, 0.114, 0.122, 0.094, 0.054, 0.026, 0.018];
-      const FISH_TOP_H    = [0.032, 0.078, 0.144, 0.205, 0.232, 0.202, 0.138, 0.074, 0.042];
-      const FISH_BOT_H    = [0.030, 0.074, 0.140, 0.214, 0.252, 0.212, 0.134, 0.070, 0.040];
+      // with a smooth, flush rounded goldfish snout (never pointy), graceful arched back, and slender caudal peduncle.
+      const FISH_HALF_W   = [0.038, 0.062, 0.094, 0.114, 0.122, 0.094, 0.054, 0.026, 0.018];
+      const FISH_TOP_H    = [0.044, 0.084, 0.146, 0.205, 0.232, 0.202, 0.138, 0.074, 0.042];
+      const FISH_BOT_H    = [0.044, 0.080, 0.142, 0.214, 0.252, 0.212, 0.134, 0.070, 0.040];
 
       const FISH_S_STEPS = 11;
       const FISH_T_STEPS = 10;
@@ -1561,12 +1561,12 @@
         const mouthWave = 0.5 + 0.5 * Math.sin(elapsed * (4.8 * foodBoost) + f.id * 2.1);
         const mouthOpen = Math.pow(mouthWave, 1.35);
 
-        // Front rounded nose cap (slightly puffs forward with rhythmic paku-paku breathing)
+        // Front rounded nose cap (flush with snout, no forward protrusion)
         const noseFrame = spineFrames[0];
-        const snoutExt = L * (0.012 + 0.009 * mouthOpen);
+        const snoutExt = L * 0.004;
         const noseTip = toCamera(
           noseFrame.sp.lx + noseFrame.fx * snoutExt,
-          -L * 0.004,
+          0,
           noseFrame.sp.lz + noseFrame.fz * snoutExt
         );
         const noseN = rotateNormal(noseFrame.fx, 0, noseFrame.fz);
@@ -1595,39 +1595,33 @@
           }
         }
 
-        // --- TRUE 3D INTEGRATED "PAKU-PAKU" MOUTH (4 anatomical 3D lip points right on the snout!) ---
-        // Seamlessly transitions between front oval "O" and side-profile opening jaw with zero detachment.
-        if (noseN.z > -0.35) {
-          const lipFwd = L * (0.014 + 0.012 * mouthOpen);
-          const cornerBack = -L * 0.032;
-          const cornerLat = L * (0.036 + 0.008 * mouthOpen);
-          const mTop = toCamera(
-            noseFrame.sp.lx + noseFrame.fx * lipFwd,
-            -L * (0.006 + 0.012 * mouthOpen),
-            noseFrame.sp.lz + noseFrame.fz * lipFwd
-          );
-          const mBot = toCamera(
-            noseFrame.sp.lx + noseFrame.fx * (lipFwd * 0.92),
-            L * (0.014 + 0.034 * mouthOpen),
-            noseFrame.sp.lz + noseFrame.fz * (lipFwd * 0.92)
-          );
-          const mRight = toCamera(
-            noseFrame.sp.lx + noseFrame.fx * cornerBack + noseFrame.latX * cornerLat,
-            L * 0.008,
-            noseFrame.sp.lz + noseFrame.fz * cornerBack + noseFrame.latZ * cornerLat
-          );
-          const mLeft = toCamera(
-            noseFrame.sp.lx + noseFrame.fx * cornerBack - noseFrame.latX * cornerLat,
-            L * 0.008,
-            noseFrame.sp.lz + noseFrame.fz * cornerBack - noseFrame.latZ * cornerLat
-          );
+        // --- FLUSH, ROUND, LARGER 3D "PAKU-PAKU" MOUTH ---
+        // Lies flush on the front face of the snout (never protruding), opening into a big round "O".
+        if (noseN.z > -0.10) {
+          const mouthRx = L * (0.024 + 0.013 * mouthOpen);
+          const mouthRy = L * (0.012 + 0.032 * mouthOpen);
+          const mouthCenterY = L * 0.004;
+          const mouthPts = [];
+          let mzSum = 0;
+          const M_STEPS = 8;
+          for (let k = 0; k < M_STEPS; k++) {
+            const ang = (k / M_STEPS) * Math.PI * 2;
+            const cx = Math.cos(ang) * mouthRx;
+            const cy = mouthCenterY + Math.sin(ang) * mouthRy;
+            // Slightly follow the gentle curvature of the front cap so it sits 100% flush
+            const flushFwd = L * 0.005 * (1 - 0.5 * (Math.cos(ang) * Math.cos(ang)));
+            const pt = toCamera(
+              noseFrame.sp.lx + noseFrame.fx * flushFwd + noseFrame.latX * cx,
+              cy,
+              noseFrame.sp.lz + noseFrame.fz * flushFwd + noseFrame.latZ * cx
+            );
+            mouthPts.push(pt);
+            mzSum += pt.wz;
+          }
           drawList.push({
-            wz: Math.max(mTop.wz, mBot.wz, mRight.wz, mLeft.wz) + 1.8,
+            wz: mzSum / M_STEPS + 1.6,
             kind: 'mouth',
-            top: mTop,
-            bot: mBot,
-            right: mRight,
-            left: mLeft,
+            pts: mouthPts,
             open: mouthOpen,
             scale: L / 68,
             lipCol: capCol
@@ -1929,54 +1923,27 @@
             ctx.stroke();
             ctx.restore();
           } else if (item.kind === 'mouth') {
-            // True 3D projected 4-point anatomical mouth integrated directly onto the snout!
-            const t = item.top;
-            const b = item.bot;
-            const r = item.right;
-            const l = item.left;
-
-            // Smooth closed oval curve through top -> right -> bot -> left
+            // Flush, round, larger 3D projected mouth on the front face of the head
+            const pts = item.pts;
             ctx.save();
             ctx.beginPath();
-            ctx.moveTo(t.sx, t.sy);
-            ctx.quadraticCurveTo(
-              (t.sx + r.sx) * 0.5 + (r.sx - l.sx) * 0.06,
-              (t.sy + r.sy) * 0.5 - (b.sy - t.sy) * 0.14,
-              r.sx, r.sy
-            );
-            ctx.quadraticCurveTo(
-              (b.sx + r.sx) * 0.5 + (r.sx - l.sx) * 0.06,
-              (b.sy + r.sy) * 0.5 + (b.sy - t.sy) * 0.14,
-              b.sx, b.sy
-            );
-            ctx.quadraticCurveTo(
-              (b.sx + l.sx) * 0.5 - (r.sx - l.sx) * 0.06,
-              (b.sy + l.sy) * 0.5 + (b.sy - t.sy) * 0.14,
-              l.sx, l.sy
-            );
-            ctx.quadraticCurveTo(
-              (t.sx + l.sx) * 0.5 - (r.sx - l.sx) * 0.06,
-              (t.sy + l.sy) * 0.5 - (b.sy - t.sy) * 0.14,
-              t.sx, t.sy
-            );
+            const last = pts[pts.length - 1];
+            ctx.moveTo((last.sx + pts[0].sx) * 0.5, (last.sy + pts[0].sy) * 0.5);
+            for (let k = 0; k < pts.length; k++) {
+              const cur = pts[k];
+              const nxt = pts[(k + 1) % pts.length];
+              ctx.quadraticCurveTo(cur.sx, cur.sy, (cur.sx + nxt.sx) * 0.5, (cur.sy + nxt.sy) * 0.5);
+            }
             ctx.closePath();
 
-            // Natural fleshy outer lip rim matching snout skin color
-            ctx.strokeStyle = item.lipCol;
-            ctx.lineWidth = (2.2 + 0.5 * item.open) * item.scale;
-            ctx.lineJoin = 'round';
-            ctx.stroke();
-
-            // Dark open interior mouth cavity
-            ctx.fillStyle = 'rgba(48, 12, 10, 0.90)';
+            // Dark round mouth cavity
+            ctx.fillStyle = 'rgba(42, 10, 10, 0.92)';
             ctx.fill();
 
-            // Delicate wet highlight on lower lip rim
-            ctx.strokeStyle = 'rgba(255, 245, 238, 0.42)';
-            ctx.lineWidth = 0.8;
-            ctx.beginPath();
-            ctx.moveTo(r.sx, r.sy);
-            ctx.quadraticCurveTo(b.sx, b.sy + 0.8, l.sx, l.sy);
+            // Subtle flush lip rim blending with the snout
+            ctx.strokeStyle = item.lipCol;
+            ctx.lineWidth = (1.1 + 0.35 * item.open) * item.scale;
+            ctx.lineJoin = 'round';
             ctx.stroke();
             ctx.restore();
           } else if (item.kind === 'eye') {
