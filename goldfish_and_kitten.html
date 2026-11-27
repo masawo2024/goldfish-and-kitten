@@ -1,0 +1,2619 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>金魚鉢と黒猫の子猫</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #1a1816;
+      font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #stage-wrap {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+
+    .hud {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(20, 22, 30, 0.42);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+      z-index: 10;
+    }
+
+    .hud button {
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.03em;
+      padding: 7px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .hud button:hover {
+      background: rgba(255, 255, 255, 0.24);
+      border-color: rgba(255, 255, 255, 0.42);
+      transform: translateY(-1px);
+    }
+
+    .hud button:active {
+      transform: translateY(0) scale(0.97);
+    }
+
+    .hud .sep {
+      width: 1px;
+      height: 18px;
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    .hint {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(20, 22, 30, 0.34);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      transition: opacity 0.6s ease;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage-wrap">
+    <canvas id="scene"></canvas>
+    <div class="hint" id="hint">金魚鉢をクリックでエサやり・黒猫をクリックでちょいちょい</div>
+    <div class="hud">
+      <button id="btn-feed" type="button">エサをあげる</button>
+      <button id="btn-paw" type="button">黒猫がちょいちょい</button>
+      <span class="sep"></span>
+      <button id="btn-theme" type="button">時間帯：昼</button>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('scene');
+      const ctx = canvas.getContext('2d');
+      const btnFeed = document.getElementById('btn-feed');
+      const btnPaw = document.getElementById('btn-paw');
+      const btnTheme = document.getElementById('btn-theme');
+      const hintEl = document.getElementById('hint');
+
+      // Logical stage coordinates
+      const STAGE_W = 1100;
+      const STAGE_H = 680;
+      const TABLE_Y = 472;
+
+      // Bowl geometry (spherical glass bowl with flared Japanese rim)
+      const BOWL = {
+        cx: 410,
+        cy: 348,
+        r: 162,
+        waterY: 258,
+        neckY: 216,
+        rimY: 188,
+        rimRx: 114,
+        baseY: 492
+      };
+
+      const THEMES = [
+        {
+          id: 'day',
+          label: '昼',
+          skyTop: '#cbe6f6',
+          skyMid: '#edf6f9',
+          skyBot: '#f8f2e4',
+          sunColor: 'rgba(255, 248, 220, 0.42)',
+          rayColor: 'rgba(255, 250, 232, 0.18)',
+          wallTint: 'rgba(245, 238, 224, 0.55)',
+          tableTop: '#d7a97b',
+          tableMid: '#be8958',
+          tableBot: '#946239',
+          grainColor: 'rgba(92, 54, 24, 0.12)',
+          waterTop: 'rgba(176, 234, 247, 0.34)',
+          waterBot: 'rgba(98, 186, 212, 0.38)',
+          causticAlpha: 0.42,
+          glassRim: 'rgba(255, 255, 255, 0.78)',
+          catFur: '#171822',
+          catFurMid: '#232636',
+          catRim: 'rgba(190, 216, 255, 0.44)',
+          shadowAlpha: 0.24,
+          moteColor: 'rgba(255, 250, 225, 0.6)'
+        },
+        {
+          id: 'dusk',
+          label: '夕方',
+          skyTop: '#56436f',
+          skyMid: '#d57869',
+          skyBot: '#f8c383',
+          sunColor: 'rgba(255, 200, 128, 0.46)',
+          rayColor: 'rgba(255, 198, 130, 0.19)',
+          wallTint: 'rgba(246, 196, 152, 0.3)',
+          tableTop: '#b77752',
+          tableMid: '#965a3c',
+          tableBot: '#6c3c27',
+          grainColor: 'rgba(65, 28, 14, 0.16)',
+          waterTop: 'rgba(245, 208, 184, 0.30)',
+          waterBot: 'rgba(142, 148, 184, 0.38)',
+          causticAlpha: 0.45,
+          glassRim: 'rgba(255, 236, 212, 0.78)',
+          catFur: '#15141e',
+          catFurMid: '#242031',
+          catRim: 'rgba(255, 186, 132, 0.46)',
+          shadowAlpha: 0.30,
+          moteColor: 'rgba(255, 224, 170, 0.65)'
+        },
+        {
+          id: 'night',
+          label: '夜',
+          skyTop: '#0e172c',
+          skyMid: '#192a4a',
+          skyBot: '#293e61',
+          sunColor: 'rgba(205, 225, 255, 0.30)',
+          rayColor: 'rgba(182, 212, 255, 0.12)',
+          wallTint: 'rgba(18, 28, 48, 0.45)',
+          tableTop: '#57453c',
+          tableMid: '#43342e',
+          tableBot: '#2d221f',
+          grainColor: 'rgba(16, 10, 8, 0.25)',
+          waterTop: 'rgba(128, 196, 232, 0.26)',
+          waterBot: 'rgba(56, 114, 160, 0.38)',
+          causticAlpha: 0.32,
+          glassRim: 'rgba(210, 234, 255, 0.72)',
+          catFur: '#0f1018',
+          catFurMid: '#1a1e2e',
+          catRim: 'rgba(168, 206, 255, 0.48)',
+          shadowAlpha: 0.42,
+          moteColor: 'rgba(210, 232, 255, 0.55)'
+        }
+      ];
+
+      let themeIdx = 0;
+
+      // Viewport transform cache
+      let viewScale = 1;
+      let viewOffX = 0;
+      let viewOffY = 0;
+
+      function resize() {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        viewScale = Math.min(w / STAGE_W, h / STAGE_H);
+        // Slightly fill wide/tall viewports nicely while keeping core scene visible
+        viewOffX = (w - STAGE_W * viewScale) * 0.5;
+        viewOffY = (h - STAGE_H * viewScale) * 0.5;
+      }
+
+      window.addEventListener('resize', resize);
+      resize();
+
+      function clientToStage(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: (clientX - rect.left - viewOffX) / viewScale,
+          y: (clientY - rect.top - viewOffY) / viewScale
+        };
+      }
+
+      // Utility helpers
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+
+      function bowlSliceRadius(y) {
+        const dy = y - BOWL.cy;
+        const sq = BOWL.r * BOWL.r - dy * dy;
+        return sq > 0 ? Math.sqrt(sq) : 0;
+      }
+
+      // Pebbles at the bottom of the bowl
+      const pebbles = [];
+      const pebbleColors = ['#8c969b', '#a89d8e', '#6f797e', '#b9ad9b', '#7d8a87', '#c5b8a5', '#646e75'];
+      for (let i = 0; i < 24; i++) {
+        const angle = (i / 24) * Math.PI * 2 + rand(-0.2, 0.2);
+        const dist = rand(0, 74);
+        const px = BOWL.cx + Math.cos(angle) * dist;
+        const pz = Math.sin(angle) * dist * 0.65;
+        const py = BOWL.baseY - 12 - rand(0, 14) + pz * 0.14;
+        pebbles.push({
+          x: px,
+          y: py,
+          z: pz,
+          rx: rand(10, 18),
+          ry: rand(6, 10),
+          rot: rand(-0.35, 0.35),
+          color: pebbleColors[i % pebbleColors.length]
+        });
+      }
+      pebbles.sort((a, b) => a.z - b.z);
+
+      // Aquatic plants (水草) swaying inside the bowl
+      const plants = [
+        { baseX: BOWL.cx - 64, baseY: BOWL.baseY - 22, z: -48, height: 145, swayPhase: 0.2, lean: -14, color: '#3b8c5a', leafColor: '#56b374' },
+        { baseX: BOWL.cx - 42, baseY: BOWL.baseY - 18, z: -32, height: 118, swayPhase: 1.4, lean: -4, color: '#2f7a4e', leafColor: '#48a468' },
+        { baseX: BOWL.cx - 78, baseY: BOWL.baseY - 26, z: -10, height: 102, swayPhase: 2.6, lean: -20, color: '#459a64', leafColor: '#69c684' },
+        { baseX: BOWL.cx + 38, baseY: BOWL.baseY - 20, z: -55, height: 110, swayPhase: 3.4, lean: 12, color: '#337f54', leafColor: '#4fa870' }
+      ];
+
+      // Ambient dust motes in sunlight
+      const motes = [];
+      for (let i = 0; i < 28; i++) {
+        motes.push({
+          x: rand(0, STAGE_W),
+          y: rand(40, TABLE_Y + 40),
+          r: rand(1.2, 3.2),
+          vx: rand(4, 12),
+          vy: rand(-5, 5),
+          phase: rand(0, Math.PI * 2),
+          alpha: rand(0.25, 0.85)
+        });
+      }
+
+      // Water bubbles, surface ripples, glass tap rings, and fish food
+      const bubbles = [];
+      const surfaceRipples = [];
+      const glassTaps = [];
+      const foods = [];
+
+      function spawnBubble(x, y, z, r = rand(2.2, 5.2)) {
+        bubbles.push({
+          x, y, z, r,
+          vy: -rand(24, 48),
+          wobblePhase: rand(0, Math.PI * 2),
+          wobbleAmp: rand(5, 14)
+        });
+      }
+
+      function spawnSurfaceRipple(x, strength = 1) {
+        surfaceRipples.push({
+          x: clamp(x, BOWL.cx - 108, BOWL.cx + 108),
+          r: 4,
+          maxR: 48 * strength + 22,
+          alpha: 0.72 * strength
+        });
+      }
+
+      function spawnGlassTap(x, y) {
+        glassTaps.push({
+          x, y,
+          r: 6,
+          maxR: 52,
+          alpha: 0.9
+        });
+        spawnSurfaceRipple(BOWL.cx + 76, 1.15);
+        for (let i = 0; i < 4; i++) {
+          spawnBubble(BOWL.cx + rand(70, 118), y + rand(-18, 22), rand(-20, 30), rand(2, 4.5));
+        }
+      }
+
+      function dropFood(stageX) {
+        const dropX = clamp(stageX || BOWL.cx + rand(-55, 55), BOWL.cx - 75, BOWL.cx + 75);
+        for (let i = 0; i < 4; i++) {
+          const fx = clamp(dropX + rand(-24, 24), BOWL.cx - 88, BOWL.cx + 88);
+          foods.push({
+            x: fx,
+            y: BOWL.rimY - rand(10, 35),
+            z: rand(-40, 40),
+            vy: rand(95, 140),
+            floating: false,
+            eaten: false,
+            bobPhase: rand(0, Math.PI * 2),
+            r: rand(3.2, 4.4)
+          });
+        }
+      }
+
+      // 3 distinct realistic Japanese Goldfish (更紗琉金・黄金和金・丹頂)
+      const FISH_SPECS = [
+        {
+          name: 'sarasa', // 更紗琉金（深紅と真珠白）
+          length: 76,
+          bodyWidth: 0.41,
+          dorsalColor: '#9e1508',
+          baseColor: '#e93212',
+          midColor: '#ff5d28',
+          bellyColor: '#f6ede4',
+          shadowTint: 'rgba(62, 12, 6, 0.44)',
+          finRoot: 'rgba(222, 54, 24, 0.72)',
+          finMid: 'rgba(255, 228, 214, 0.56)',
+          finEdge: 'rgba(255, 250, 246, 0.16)',
+          finBack: 'rgba(176, 48, 34, 0.44)',
+          rayColor: 'rgba(255, 236, 224, 0.42)',
+          scaleStroke: 'rgba(128, 24, 10, 0.24)',
+          pattern: 'sarasa',
+          orbitR: 84,
+          baseY: 326,
+          orbitSpeed: 0.52,
+          angle: 0.3,
+          dir: 1
+        },
+        {
+          name: 'kogane', // 鮮やかな朱金・黄金琉金
+          length: 68,
+          bodyWidth: 0.39,
+          dorsalColor: '#a63606',
+          baseColor: '#f26a12',
+          midColor: '#ff9c2a',
+          bellyColor: '#ffe4a6',
+          shadowTint: 'rgba(84, 30, 6, 0.42)',
+          finRoot: 'rgba(236, 114, 24, 0.70)',
+          finMid: 'rgba(255, 212, 134, 0.54)',
+          finEdge: 'rgba(255, 244, 210, 0.16)',
+          finBack: 'rgba(174, 82, 22, 0.42)',
+          rayColor: 'rgba(255, 240, 198, 0.44)',
+          scaleStroke: 'rgba(136, 48, 8, 0.25)',
+          pattern: 'gold',
+          orbitR: 72,
+          baseY: 394,
+          orbitSpeed: 0.62,
+          angle: 2.5,
+          dir: -1
+        },
+        {
+          name: 'tancho', // 丹頂（真珠白に深紅の肉瘤）
+          length: 63,
+          bodyWidth: 0.37,
+          dorsalColor: '#cedbe6',
+          baseColor: '#f5f8fc',
+          midColor: '#ffffff',
+          bellyColor: '#dfe9f2',
+          shadowTint: 'rgba(34, 58, 84, 0.36)',
+          finRoot: 'rgba(220, 234, 248, 0.68)',
+          finMid: 'rgba(246, 250, 255, 0.52)',
+          finEdge: 'rgba(255, 255, 255, 0.15)',
+          finBack: 'rgba(162, 188, 214, 0.42)',
+          rayColor: 'rgba(255, 255, 255, 0.50)',
+          scaleStroke: 'rgba(116, 146, 174, 0.24)',
+          pattern: 'tancho',
+          orbitR: 60,
+          baseY: 356,
+          orbitSpeed: 0.45,
+          angle: 4.5,
+          dir: 1
+        }
+      ];
+
+      const fishes = FISH_SPECS.map((spec, idx) => {
+        const x = BOWL.cx + Math.cos(spec.angle) * spec.orbitR;
+        const z = Math.sin(spec.angle) * spec.orbitR * 0.75;
+        const yaw = spec.dir > 0 ? spec.angle + Math.PI * 0.5 : spec.angle - Math.PI * 0.5;
+        return {
+          ...spec,
+          id: idx,
+          x,
+          y: spec.baseY,
+          z,
+          vx: Math.cos(yaw) * 45,
+          vy: 0,
+          vz: Math.sin(yaw) * 45,
+          yaw,
+          pitch: 0,
+          roll: 0,
+          swimPhase: rand(0, Math.PI * 2),
+          wiggleAmp: 1,
+          startleTimer: 0,
+          turnTimer: rand(3.5, 8.0),
+          targetY: spec.baseY,
+          bubbleTimer: rand(1.5, 4.5)
+        };
+      });
+
+      // Black Kitten state machine
+      const kitten = {
+        baseX: 695,
+        baseY: 498,
+        headX: 642,
+        headY: 344,
+        lookX: BOWL.cx + 20,
+        lookY: BOWL.cy,
+        targetFishIdx: 0,
+        headTilt: 0,
+        crouch: 0,           // 0 = sitting upright, 1 = hunting lean forward
+        pupilDilation: 0.52, // 0.46..0.82
+        blinkTimer: 2.8,
+        blinkProgress: 0,    // 0 = open, 1 = closed
+        earTwitchL: 0,
+        earTwitchR: 0,
+        earTwitchTimer: 2.2,
+        tailPhase: 0,
+        tailExcitement: 0.35,
+        // Hunting / pawing state
+        state: 'watching',   // 'watching' | 'stalking' | 'pawing' | 'surprised'
+        stateTimer: 0,
+        pawCooldown: 2.8,
+        pawProgress: 0,      // 0 = resting on table, 1 = touching glass
+        pawTapCount: 0,
+        pawTappedThisSwipe: false,
+        pawTargetY: 368,
+        bellSwing: 0,
+        bellVel: 0
+      };
+
+      // Mouse gentle interaction (hover slightly attracts curiosity)
+      const pointer = { x: -1, y: -1, active: false, idleTime: 99 };
+
+      canvas.addEventListener('pointermove', (e) => {
+        const pt = clientToStage(e.clientX, e.clientY);
+        pointer.x = pt.x;
+        pointer.y = pt.y;
+        pointer.active = true;
+        pointer.idleTime = 0;
+      });
+
+      canvas.addEventListener('pointerleave', () => {
+        pointer.active = false;
+      });
+
+      function triggerKittenPaw(preferredY) {
+        if (kitten.state === 'pawing') return;
+        kitten.state = 'pawing';
+        kitten.stateTimer = 0;
+        kitten.pawTapCount = 0;
+        kitten.pawTappedThisSwipe = false;
+        kitten.pawTargetY = clamp(preferredY || fishes[kitten.targetFishIdx].y, 315, 415);
+        kitten.bellVel += 4.5;
+      }
+
+      function startleFishesNear(originX, originY, force = 1) {
+        fishes.forEach((f) => {
+          const dx = f.x - originX;
+          const dy = f.y - originY;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 175) {
+            const awayX = (dx / (dist || 1)) - 0.55;
+            const awayY = (dy / (dist || 1)) + rand(-0.25, 0.25);
+            const len = Math.hypot(awayX, awayY) || 1;
+            const burst = (135 + rand(20, 45)) * force;
+            f.vx = (awayX / len) * burst;
+            f.vy = (awayY / len) * burst * 0.65;
+            f.vz = rand(-75, 75);
+            f.startleTimer = 1.15;
+            f.dir = f.vx >= 0 ? 1 : -1;
+            spawnBubble(f.x, f.y - 6, f.z, rand(2.2, 4.2));
+          }
+        });
+      }
+
+      canvas.addEventListener('pointerdown', (e) => {
+        const pt = clientToStage(e.clientX, e.clientY);
+        hintEl.style.opacity = '0';
+
+        // Check if clicked on kitten
+        const distKitten = Math.hypot(pt.x - 675, pt.y - 405);
+        if (distKitten < 120) {
+          triggerKittenPaw();
+          return;
+        }
+
+        // Check if clicked near/inside bowl
+        const distBowl = Math.hypot(pt.x - BOWL.cx, pt.y - BOWL.cy);
+        if (distBowl < BOWL.r + 36) {
+          if (pt.y < BOWL.waterY + 28) {
+            dropFood(pt.x);
+          } else {
+            spawnGlassTap(pt.x, pt.y);
+            startleFishesNear(pt.x, pt.y, 0.9);
+            kitten.earTwitchL = 1;
+            kitten.earTwitchR = 1;
+          }
+        }
+      });
+
+      btnFeed.addEventListener('click', () => {
+        hintEl.style.opacity = '0';
+        dropFood(BOWL.cx + rand(-40, 40));
+      });
+
+      btnPaw.addEventListener('click', () => {
+        hintEl.style.opacity = '0';
+        triggerKittenPaw();
+      });
+
+      btnTheme.addEventListener('click', () => {
+        themeIdx = (themeIdx + 1) % THEMES.length;
+        btnTheme.textContent = `時間帯：${THEMES[themeIdx].label}`;
+      });
+
+      // Fade out hint gently after a few seconds
+      setTimeout(() => {
+        hintEl.style.opacity = '0.55';
+      }, 5500);
+
+      // Update simulation
+      let lastTime = performance.now();
+      let elapsed = 0;
+
+      function update(dt) {
+        elapsed += dt;
+        pointer.idleTime += dt;
+
+        // Ambient dust motes
+        for (const m of motes) {
+          m.x += m.vx * dt;
+          m.y += (m.vy + Math.sin(elapsed * 0.9 + m.phase) * 4) * dt;
+          if (m.x > STAGE_W + 10) m.x = -10;
+          if (m.y < 20) m.y = TABLE_Y + 20;
+          if (m.y > TABLE_Y + 50) m.y = 30;
+        }
+
+        // Fish food physics
+        for (let i = foods.length - 1; i >= 0; i--) {
+          const fd = foods[i];
+          if (fd.eaten) {
+            foods.splice(i, 1);
+            continue;
+          }
+          if (!fd.floating) {
+            fd.y += fd.vy * dt;
+            if (fd.y >= BOWL.waterY + 3) {
+              fd.y = BOWL.waterY + 3;
+              fd.floating = true;
+              spawnSurfaceRipple(fd.x, 0.72);
+            }
+          } else {
+            fd.bobPhase += dt * 3.5;
+            fd.y = BOWL.waterY + 3 + Math.sin(fd.bobPhase) * 1.8;
+            fd.x += Math.sin(fd.bobPhase * 0.5) * 4 * dt;
+          }
+        }
+
+        // Update 3 goldfish inside spherical water volume
+        for (const f of fishes) {
+          f.startleTimer = Math.max(0, f.startleTimer - dt);
+          f.turnTimer -= dt;
+          f.bubbleTimer -= dt;
+
+          if (f.bubbleTimer <= 0) {
+            f.bubbleTimer = rand(2.2, 5.8);
+            const noseX = f.x + Math.cos(f.yaw) * (f.length * 0.36);
+            spawnBubble(noseX, f.y - 4, f.z, rand(1.8, 3.8));
+          }
+
+          // Check for floating food
+          let nearestFood = null;
+          let nearestFoodDist = 9999;
+          for (const fd of foods) {
+            if (!fd.floating || fd.eaten) continue;
+            const d = Math.hypot(fd.x - f.x, fd.y - f.y, (fd.z - f.z) * 0.6);
+            if (d < nearestFoodDist) {
+              nearestFoodDist = d;
+              nearestFood = fd;
+            }
+          }
+
+          let desiredVx, desiredVy, desiredVz;
+
+          if (nearestFood && f.startleTimer <= 0) {
+            const dx = nearestFood.x - f.x;
+            const dy = (nearestFood.y + 12) - f.y;
+            const dz = nearestFood.z - f.z;
+            const dist = Math.hypot(dx, dy, dz) || 1;
+            const spd = 88;
+            desiredVx = (dx / dist) * spd;
+            desiredVy = (dy / dist) * spd;
+            desiredVz = (dz / dist) * spd;
+
+            if (dist < 22) {
+              nearestFood.eaten = true;
+              spawnSurfaceRipple(nearestFood.x, 0.9);
+              spawnBubble(f.x, BOWL.waterY + 10, f.z, 3.5);
+              spawnBubble(f.x + rand(-6, 6), BOWL.waterY + 14, f.z, 2.2);
+            }
+          } else {
+            // Smooth circular / figure-8 cruising inside the bowl
+            if (f.turnTimer <= 0) {
+              f.turnTimer = rand(4.5, 9.5);
+              if (Math.random() < 0.38) f.dir *= -1;
+              f.targetY = clamp(f.baseY + rand(-34, 34), BOWL.waterY + 34, BOWL.baseY - 48);
+              f.orbitR = rand(52, 98);
+            }
+
+            f.angle += f.orbitSpeed * f.dir * dt;
+            const wobR = f.orbitR + Math.sin(elapsed * 0.8 + f.id * 2.1) * 14;
+            const tx = BOWL.cx + Math.cos(f.angle) * wobR;
+            const tz = Math.sin(f.angle) * wobR * 0.82;
+            const ty = f.targetY + Math.sin(elapsed * 1.15 + f.id * 1.7) * 14;
+
+            const dx = tx - f.x;
+            const dy = ty - f.y;
+            const dz = tz - f.z;
+            const dist = Math.hypot(dx, dy, dz) || 1;
+            const cruiseSpd = 38 + (f.id === 1 ? 10 : 0);
+            desiredVx = (dx / dist) * Math.min(cruiseSpd, dist * 1.4);
+            desiredVy = (dy / dist) * Math.min(cruiseSpd * 0.6, dist * 1.2);
+            desiredVz = (dz / dist) * Math.min(cruiseSpd, dist * 1.4);
+          }
+
+          // Gentle separation between fish so they don't overlap awkwardly
+          for (const other of fishes) {
+            if (other === f) continue;
+            const sx = f.x - other.x;
+            const sy = f.y - other.y;
+            const sz = f.z - other.z;
+            const sd = Math.hypot(sx, sy, sz) || 1;
+            if (sd < 56) {
+              const push = (56 - sd) * 1.4;
+              desiredVx += (sx / sd) * push;
+              desiredVy += (sy / sd) * push * 0.7;
+              desiredVz += (sz / sd) * push;
+            }
+          }
+
+          const steerRate = f.startleTimer > 0 ? 1.8 : 3.2;
+          f.vx = lerp(f.vx, desiredVx, clamp(dt * steerRate, 0, 1));
+          f.vy = lerp(f.vy, desiredVy, clamp(dt * steerRate, 0, 1));
+          f.vz = lerp(f.vz, desiredVz, clamp(dt * steerRate, 0, 1));
+
+          f.x += f.vx * dt;
+          f.y += f.vy * dt;
+          f.z += f.vz * dt;
+
+          // Keep strictly inside spherical glass bowl & below water surface
+          const minY = BOWL.waterY + 26;
+          const maxY = BOWL.baseY - 40;
+          if (f.y < minY) {
+            f.y = minY;
+            if (f.vy < 0) f.vy *= -0.4;
+          } else if (f.y > maxY) {
+            f.y = maxY;
+            if (f.vy > 0) f.vy *= -0.4;
+          }
+
+          const sliceR = bowlSliceRadius(f.y);
+          const margin = f.length * 0.56 + 6;
+          const maxHorizR = Math.max(18, sliceR - margin);
+          const rx = f.x - BOWL.cx;
+          const rz = f.z;
+          const horizDist = Math.hypot(rx, rz);
+          if (horizDist > maxHorizR) {
+            const nx = rx / horizDist;
+            const nz = rz / horizDist;
+            f.x = BOWL.cx + nx * maxHorizR;
+            f.z = nz * maxHorizR;
+            // Reflect inward smoothly
+            const dot = f.vx * nx + f.vz * nz;
+            if (dot > 0) {
+              f.vx -= 1.6 * dot * nx;
+              f.vz -= 1.6 * dot * nz;
+            }
+          }
+
+          // Smooth heading (yaw), pitch & subtle natural banking roll when turning
+          const hSpeed = Math.hypot(f.vx, f.vz);
+          let targetRoll = 0;
+          if (hSpeed > 4) {
+            const targetYaw = Math.atan2(f.vz, f.vx);
+            let diff = targetYaw - f.yaw;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            f.yaw += diff * clamp(dt * 6.5, 0, 1);
+            targetRoll = clamp(diff * 0.45, -0.26, 0.26);
+          }
+          f.roll = lerp(f.roll, targetRoll, clamp(dt * 5.5, 0, 1));
+          const targetPitch = clamp(f.vy / 120, -0.35, 0.35);
+          f.pitch = lerp(f.pitch, targetPitch, clamp(dt * 5, 0, 1));
+
+          const speed = Math.hypot(f.vx, f.vy, f.vz);
+          const freq = 5.4 + clamp(speed * 0.09, 0, 12);
+          f.swimPhase += dt * freq;
+          f.wiggleAmp = lerp(f.wiggleAmp, 0.78 + clamp(speed / 90, 0, 1.1), clamp(dt * 6, 0, 1));
+        }
+
+        // Update bubbles
+        for (let i = bubbles.length - 1; i >= 0; i--) {
+          const b = bubbles[i];
+          b.y += b.vy * dt;
+          b.wobblePhase += dt * 5;
+          b.x += Math.sin(b.wobblePhase) * b.wobbleAmp * dt;
+          if (b.y <= BOWL.waterY + 4) {
+            spawnSurfaceRipple(b.x, 0.35);
+            bubbles.splice(i, 1);
+          }
+        }
+
+        // Occasional ambient bubble from plants
+        if (Math.random() < dt * 1.4) {
+          const pl = plants[Math.floor(Math.random() * plants.length)];
+          spawnBubble(pl.baseX + rand(-10, 10), pl.baseY - rand(35, pl.height * 0.8), pl.z, rand(1.6, 3.2));
+        }
+
+        // Update surface ripples
+        for (let i = surfaceRipples.length - 1; i >= 0; i--) {
+          const rp = surfaceRipples[i];
+          rp.r += 38 * dt;
+          rp.alpha -= 0.55 * dt;
+          if (rp.alpha <= 0 || rp.r >= rp.maxR) surfaceRipples.splice(i, 1);
+        }
+
+        // Update glass tap rings
+        for (let i = glassTaps.length - 1; i >= 0; i--) {
+          const gt = glassTaps[i];
+          gt.r += 95 * dt;
+          gt.alpha -= 1.45 * dt;
+          if (gt.alpha <= 0 || gt.r >= gt.maxR) glassTaps.splice(i, 1);
+        }
+
+        // Update Black Kitten AI & animation
+        updateKitten(dt);
+      }
+
+      function updateKitten(dt) {
+        // Choose the fish closest to the kitten's right side of the bowl!
+        let bestIdx = 0;
+        let bestScore = -9999;
+        for (let i = 0; i < fishes.length; i++) {
+          const f = fishes[i];
+          // Prefer fish near the right edge of the bowl (closest to kitten)
+          const score = f.x + f.z * 0.28 + (i === kitten.targetFishIdx ? 22 : 0);
+          if (score > bestScore) {
+            bestScore = score;
+            bestIdx = i;
+          }
+        }
+        kitten.targetFishIdx = bestIdx;
+        const targetFish = fishes[bestIdx];
+
+        // Smooth eye/head tracking
+        const aimX = targetFish.x;
+        const aimY = targetFish.y;
+        kitten.lookX = lerp(kitten.lookX, aimX, clamp(dt * 5.2, 0, 1));
+        kitten.lookY = lerp(kitten.lookY, aimY, clamp(dt * 5.2, 0, 1));
+
+        const fishCloseness = clamp((targetFish.x - (BOWL.cx + 15)) / 105, 0, 1);
+
+        // Blinking
+        kitten.blinkTimer -= dt;
+        if (kitten.blinkTimer <= 0) {
+          kitten.blinkProgress += dt * 11;
+          if (kitten.blinkProgress >= Math.PI) {
+            kitten.blinkProgress = 0;
+            kitten.blinkTimer = rand(2.8, 6.2);
+          }
+        }
+
+        // Ear twitches
+        kitten.earTwitchTimer -= dt;
+        if (kitten.earTwitchTimer <= 0) {
+          kitten.earTwitchTimer = rand(1.8, 4.8);
+          if (Math.random() < 0.55) kitten.earTwitchL = 1;
+          else kitten.earTwitchR = 1;
+        }
+        kitten.earTwitchL = Math.max(0, kitten.earTwitchL - dt * 5.2);
+        kitten.earTwitchR = Math.max(0, kitten.earTwitchR - dt * 5.2);
+
+        // State machine
+        kitten.stateTimer += dt;
+        kitten.pawCooldown = Math.max(0, kitten.pawCooldown - dt);
+
+        if (kitten.state === 'watching') {
+          kitten.crouch = lerp(kitten.crouch, fishCloseness * 0.35, clamp(dt * 3, 0, 1));
+          kitten.pawProgress = lerp(kitten.pawProgress, 0, clamp(dt * 6, 0, 1));
+          kitten.tailExcitement = lerp(kitten.tailExcitement, 0.32 + fishCloseness * 0.35, clamp(dt * 3, 0, 1));
+
+          if (fishCloseness > 0.52 && kitten.pawCooldown <= 0) {
+            kitten.state = 'stalking';
+            kitten.stateTimer = 0;
+            kitten.earTwitchL = 0.8;
+          }
+        } else if (kitten.state === 'stalking') {
+          // Focused crouch & eager tail flick before pawing
+          kitten.crouch = lerp(kitten.crouch, 0.92, clamp(dt * 4.5, 0, 1));
+          kitten.tailExcitement = lerp(kitten.tailExcitement, 0.95, clamp(dt * 4, 0, 1));
+          kitten.pawProgress = lerp(kitten.pawProgress, 0.14, clamp(dt * 5, 0, 1));
+
+          if (kitten.stateTimer > 1.15) {
+            triggerKittenPaw(targetFish.y);
+          }
+        } else if (kitten.state === 'pawing') {
+          kitten.crouch = lerp(kitten.crouch, 1.0, clamp(dt * 6, 0, 1));
+          kitten.tailExcitement = lerp(kitten.tailExcitement, 1.15, clamp(dt * 5, 0, 1));
+
+          // Two playful little bats against the glass
+          const swipeDur = 0.62;
+          const localT = (kitten.stateTimer % swipeDur) / swipeDur;
+          const swipeNum = Math.floor(kitten.stateTimer / swipeDur);
+
+          if (swipeNum >= 2) {
+            kitten.state = 'surprised';
+            kitten.stateTimer = 0;
+            kitten.pawCooldown = rand(4.5, 7.8);
+          } else {
+            // Smooth curve peaking at 0.45
+            const arc = Math.sin(clamp(localT / 0.85, 0, 1) * Math.PI);
+            kitten.pawProgress = Math.pow(arc, 0.72);
+
+            if (localT > 0.38 && localT < 0.56 && !kitten.pawTappedThisSwipe) {
+              kitten.pawTappedThisSwipe = true;
+              const tapY = kitten.pawTargetY;
+              const tapX = BOWL.cx + bowlSliceRadius(tapY) - 2;
+              spawnGlassTap(tapX, tapY);
+              startleFishesNear(tapX, tapY, swipeNum === 0 ? 0.85 : 1.05);
+              kitten.bellVel += 5.5;
+            }
+            if (localT < 0.2) {
+              kitten.pawTappedThisSwipe = false;
+            }
+          }
+        } else if (kitten.state === 'surprised') {
+          kitten.crouch = lerp(kitten.crouch, 0.12, clamp(dt * 4.5, 0, 1));
+          kitten.pawProgress = lerp(kitten.pawProgress, 0, clamp(dt * 7.5, 0, 1));
+          kitten.tailExcitement = lerp(kitten.tailExcitement, 0.45, clamp(dt * 3, 0, 1));
+          if (kitten.stateTimer > 1.25) {
+            kitten.state = 'watching';
+            kitten.stateTimer = 0;
+          }
+        }
+
+        // Head tilt based on target height & curiosity
+        const desiredTilt = clamp((kitten.lookY - 350) * 0.0018, -0.16, 0.16)
+          + (kitten.state === 'stalking' ? -0.07 : 0)
+          + Math.sin(elapsed * 0.9) * 0.025;
+        kitten.headTilt = lerp(kitten.headTilt, desiredTilt, clamp(dt * 4.5, 0, 1));
+
+        // Pupil dilation increases when stalking / pawing / fish close
+        const desiredPupil = 0.48 + fishCloseness * 0.18 + (kitten.state === 'stalking' || kitten.state === 'pawing' ? 0.16 : 0);
+        kitten.pupilDilation = lerp(kitten.pupilDilation, clamp(desiredPupil, 0.44, 0.84), clamp(dt * 5, 0, 1));
+
+        // Tail animation phase
+        kitten.tailPhase += dt * (2.3 + kitten.tailExcitement * 3.8);
+
+        // Tiny collar bell pendulum physics
+        const bellAcc = -28 * kitten.bellSwing - 4.2 * kitten.bellVel;
+        kitten.bellVel += bellAcc * dt;
+        kitten.bellSwing += kitten.bellVel * dt;
+      }
+
+      // ============================================================
+      // RENDERING
+      // ============================================================
+
+      function drawBackground(theme, w, h) {
+        // Fill full viewport canvas
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+        skyGrad.addColorStop(0, theme.skyTop);
+        skyGrad.addColorStop(0.55, theme.skyMid);
+        skyGrad.addColorStop(1, theme.skyBot);
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Soft glowing sun / moon glow in upper-left window area
+        ctx.save();
+        ctx.translate(viewOffX, viewOffY);
+        ctx.scale(viewScale, viewScale);
+
+        const glow = ctx.createRadialGradient(210, 115, 18, 210, 115, 420);
+        glow.addColorStop(0, theme.sunColor);
+        glow.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(-300, -200, STAGE_W + 600, STAGE_H + 400);
+
+        // Subtle sunlit shoji / window frame silhouette in soft out-of-focus background
+        ctx.fillStyle = theme.wallTint;
+        ctx.fillRect(-400, -200, 470, TABLE_Y + 200);
+        ctx.fillRect(920, -200, 600, TABLE_Y + 200);
+
+        // Soft window muntin bars (gentle depth cue)
+        ctx.strokeStyle = theme.id === 'night' ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.28)';
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.moveTo(70, -100);
+        ctx.lineTo(70, TABLE_Y);
+        ctx.moveTo(920, -100);
+        ctx.lineTo(920, TABLE_Y);
+        ctx.moveTo(70, 215);
+        ctx.lineTo(920, 215);
+        ctx.stroke();
+
+        // Soft diagonal light beams from window
+        ctx.save();
+        ctx.fillStyle = theme.rayColor;
+        for (let i = 0; i < 3; i++) {
+          const shift = Math.sin(elapsed * 0.25 + i) * 14;
+          ctx.beginPath();
+          ctx.moveTo(120 + i * 195 + shift, -60);
+          ctx.lineTo(245 + i * 195 + shift, -60);
+          ctx.lineTo(540 + i * 195 + shift, TABLE_Y + 120);
+          ctx.lineTo(390 + i * 195 + shift, TABLE_Y + 120);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // Nighttime moon crescent & tiny stars
+        if (theme.id === 'night') {
+          ctx.save();
+          ctx.fillStyle = 'rgba(235, 244, 255, 0.82)';
+          ctx.beginPath();
+          ctx.arc(215, 118, 28, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = theme.skyTop;
+          ctx.beginPath();
+          ctx.arc(227, 112, 25, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Soft twinkling stars
+          const starCoords = [[320, 72], [460, 108], [610, 62], [755, 115], [820, 78], [540, 148]];
+          for (let i = 0; i < starCoords.length; i++) {
+            const [sx, sy] = starCoords[i];
+            const tw = 0.45 + 0.55 * Math.sin(elapsed * 2.2 + i * 1.7);
+            ctx.fillStyle = `rgba(235, 245, 255, ${tw * 0.75})`;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+
+        // Wooden tabletop (extends seamlessly across entire viewport)
+        const tableGrad = ctx.createLinearGradient(0, TABLE_Y, 0, STAGE_H + 160);
+        tableGrad.addColorStop(0, theme.tableTop);
+        tableGrad.addColorStop(0.45, theme.tableMid);
+        tableGrad.addColorStop(1, theme.tableBot);
+        ctx.fillStyle = tableGrad;
+        ctx.fillRect(-500, TABLE_Y, STAGE_W + 1000, STAGE_H - TABLE_Y + 400);
+
+        // Crisp bevel highlight along table edge
+        ctx.fillStyle = theme.id === 'night' ? 'rgba(200, 224, 255, 0.14)' : 'rgba(255, 246, 228, 0.36)';
+        ctx.fillRect(-500, TABLE_Y, STAGE_W + 1000, 3);
+
+        // Subtle horizontal wood grain lines
+        ctx.strokeStyle = theme.grainColor;
+        ctx.lineWidth = 1.6;
+        for (let i = 0; i < 12; i++) {
+          const gy = TABLE_Y + 14 + i * 18;
+          ctx.beginPath();
+          ctx.moveTo(-400, gy);
+          ctx.bezierCurveTo(180, gy + Math.sin(i * 1.7) * 5, 760, gy - Math.cos(i * 1.3) * 5, STAGE_W + 400, gy + 2);
+          ctx.stroke();
+        }
+
+        // Floating sunlit dust motes behind scene
+        ctx.fillStyle = theme.moteColor;
+        for (const m of motes) {
+          const twinkle = 0.55 + 0.45 * Math.sin(elapsed * 1.8 + m.phase);
+          ctx.globalAlpha = m.alpha * twinkle;
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.restore();
+      }
+
+      function drawTableShadowsAndCaustics(theme) {
+        // Soft shadow under goldfish bowl
+        const bowlShadow = ctx.createRadialGradient(BOWL.cx + 22, BOWL.baseY + 8, 16, BOWL.cx + 22, BOWL.baseY + 8, 168);
+        bowlShadow.addColorStop(0, `rgba(18, 22, 28, ${theme.shadowAlpha * 1.15})`);
+        bowlShadow.addColorStop(0.55, `rgba(18, 22, 28, ${theme.shadowAlpha * 0.55})`);
+        bowlShadow.addColorStop(1, 'rgba(18, 22, 28, 0)');
+        ctx.fillStyle = bowlShadow;
+        ctx.beginPath();
+        ctx.ellipse(BOWL.cx + 22, BOWL.baseY + 8, 168, 34, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Luminous dancing water caustics refracted onto the wooden table!
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        const cX = BOWL.cx + 58;
+        const cY = BOWL.baseY + 14;
+        const causticGlow = ctx.createRadialGradient(cX, cY, 8, cX, cY, 118);
+        causticGlow.addColorStop(0, `rgba(210, 248, 255, ${theme.causticAlpha})`);
+        causticGlow.addColorStop(0.6, `rgba(165, 232, 248, ${theme.causticAlpha * 0.45})`);
+        causticGlow.addColorStop(1, 'rgba(165, 232, 248, 0)');
+        ctx.fillStyle = causticGlow;
+        ctx.beginPath();
+        ctx.ellipse(cX, cY, 118, 24, 0.04, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Rippling bright caustic ribbons
+        ctx.strokeStyle = `rgba(245, 254, 255, ${theme.causticAlpha * 0.85})`;
+        ctx.lineWidth = 2.2;
+        for (let i = 0; i < 4; i++) {
+          const ph = elapsed * 2.1 + i * 1.4;
+          const ox = Math.sin(ph) * 14;
+          const oy = Math.cos(ph * 0.8) * 3;
+          ctx.beginPath();
+          ctx.ellipse(cX - 18 + i * 14 + ox, cY + oy, 26 + Math.sin(ph) * 6, 5.5, 0.06, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // Soft shadow under black kitten
+        const catShadow = ctx.createRadialGradient(kitten.baseX + 20, kitten.baseY + 6, 15, kitten.baseX + 20, kitten.baseY + 6, 128);
+        catShadow.addColorStop(0, `rgba(10, 12, 18, ${theme.shadowAlpha * 1.45})`);
+        catShadow.addColorStop(0.65, `rgba(10, 12, 18, ${theme.shadowAlpha * 0.55})`);
+        catShadow.addColorStop(1, 'rgba(10, 12, 18, 0)');
+        ctx.fillStyle = catShadow;
+        ctx.beginPath();
+        ctx.ellipse(kitten.baseX + 20, kitten.baseY + 6, 128, 24, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Build the outer silhouette path of the traditional glass goldfish bowl
+      function traceBowlPath() {
+        const { cx, cy, r, neckY, rimY, rimRx, baseY } = BOWL;
+        const neckRx = bowlSliceRadius(neckY);
+        const baseRx = bowlSliceRadius(baseY);
+        const neckAngle = Math.asin((neckY - cy) / r); // negative
+        const baseAngle = Math.asin((baseY - cy) / r); // positive
+
+        ctx.beginPath();
+        // Top-left flared lip
+        ctx.moveTo(cx - rimRx, rimY);
+        // Curve smoothly inward to exact neck radius on sphere
+        ctx.quadraticCurveTo(cx - rimRx + 3, (rimY + neckY) * 0.55, cx - neckRx, neckY);
+        // Left spherical wall down to bottom base
+        ctx.arc(cx, cy, r, Math.PI - neckAngle, Math.PI - baseAngle, true);
+        // Smooth flat glass base resting on table
+        ctx.quadraticCurveTo(cx, baseY + 12, cx + baseRx, baseY);
+        // Right spherical wall back up to neck
+        ctx.arc(cx, cy, r, baseAngle, neckAngle, true);
+        // Flare smoothly outward to top-right lip
+        ctx.quadraticCurveTo(cx + rimRx - 3, (rimY + neckY) * 0.55, cx + rimRx, rimY);
+      }
+
+      // Trace spherical water clip path (below animated undulating water surface)
+      function traceWaterClipPath() {
+        const { cx, cy, r, waterY, baseY } = BOWL;
+        const halfW = bowlSliceRadius(waterY);
+        ctx.beginPath();
+        const steps = 28;
+        for (let i = 0; i <= steps; i++) {
+          const u = i / steps;
+          const x = cx - halfW + u * halfW * 2;
+          const wave = Math.sin(u * Math.PI * 3.5 + elapsed * 2.4) * 2.2
+            + Math.cos(u * Math.PI * 5.2 - elapsed * 1.9) * 1.1;
+          const y = waterY + wave;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        const waterAngle = Math.asin((waterY - cy) / r);
+        const baseAngle = Math.asin((baseY - cy) / r);
+        ctx.arc(cx, cy, r - 3, waterAngle, baseAngle, false);
+        ctx.quadraticCurveTo(cx, baseY + 8, cx - Math.cos(baseAngle) * (r - 3), baseY);
+        ctx.arc(cx, cy, r - 3, Math.PI - baseAngle, Math.PI - waterAngle, false);
+        ctx.closePath();
+      }
+
+      function drawBowlBack(theme) {
+        // Subtle transparent back-wall glass tint
+        ctx.save();
+        traceBowlPath();
+        ctx.closePath();
+        const backGlass = ctx.createRadialGradient(BOWL.cx - 45, BOWL.cy - 40, 20, BOWL.cx, BOWL.cy, BOWL.r + 20);
+        backGlass.addColorStop(0, 'rgba(255, 255, 255, 0.14)');
+        backGlass.addColorStop(0.7, 'rgba(190, 234, 246, 0.12)');
+        backGlass.addColorStop(1, 'rgba(160, 212, 232, 0.24)');
+        ctx.fillStyle = backGlass;
+        ctx.fill();
+
+        // Back rim ellipse (behind water)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.ellipse(BOWL.cx, BOWL.rimY, BOWL.rimRx, 14, 0, Math.PI, Math.PI * 2);
+        ctx.stroke();
+
+        // Water volume fill inside bowl
+        traceWaterClipPath();
+        const waterGrad = ctx.createLinearGradient(BOWL.cx, BOWL.waterY, BOWL.cx, BOWL.baseY);
+        waterGrad.addColorStop(0, theme.waterTop);
+        waterGrad.addColorStop(0.55, 'rgba(136, 212, 232, 0.26)');
+        waterGrad.addColorStop(1, theme.waterBot);
+        ctx.fillStyle = waterGrad;
+        ctx.fill();
+
+        // Back half of water surface meniscus ellipse
+        const surfRx = bowlSliceRadius(BOWL.waterY) - 3;
+        const surfGrad = ctx.createRadialGradient(BOWL.cx - 20, BOWL.waterY, 10, BOWL.cx, BOWL.waterY, surfRx);
+        surfGrad.addColorStop(0, 'rgba(255, 255, 255, 0.34)');
+        surfGrad.addColorStop(0.7, 'rgba(176, 236, 250, 0.26)');
+        surfGrad.addColorStop(1, 'rgba(128, 206, 232, 0.36)');
+        ctx.fillStyle = surfGrad;
+        ctx.beginPath();
+        ctx.ellipse(BOWL.cx, BOWL.waterY, surfRx, 17, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      function drawPebbles() {
+        ctx.save();
+        traceWaterClipPath();
+        ctx.clip();
+
+        for (const p of pebbles) {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.rot);
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.rx, p.ry, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Subtle top highlight on wet river pebble
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.26)';
+          ctx.beginPath();
+          ctx.ellipse(-p.rx * 0.22, -p.ry * 0.3, p.rx * 0.45, p.ry * 0.28, -0.1, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      function drawPlant(pl) {
+        ctx.save();
+        const segs = 10;
+        const pts = [];
+        for (let i = 0; i <= segs; i++) {
+          const u = i / segs;
+          const sway = Math.sin(elapsed * 1.45 + pl.swayPhase - u * 2.2) * (12 * u * u);
+          const x = pl.baseX + pl.lean * u + sway;
+          const y = pl.baseY - pl.height * u;
+          pts.push({ x, y, u });
+        }
+
+        // Stem
+        ctx.strokeStyle = pl.color;
+        ctx.lineWidth = 2.6;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+
+        // Delicate pairs of water-plant leaves along stem
+        for (let i = 1; i < pts.length; i++) {
+          const p = pts[i];
+          const prev = pts[i - 1];
+          const ang = Math.atan2(p.y - prev.y, p.x - prev.x);
+          const leafLen = (13 - p.u * 4.5);
+          for (const side of [-1, 1]) {
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(ang + side * 0.85 + Math.sin(elapsed * 2 + i) * 0.08);
+            ctx.fillStyle = pl.leafColor;
+            ctx.globalAlpha = 0.82;
+            ctx.beginPath();
+            ctx.ellipse(leafLen * 0.55, 0, leafLen * 0.58, 3.2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+        ctx.restore();
+      }
+
+      // ============================================================
+      // HIGH-FPS TRUE 3D VOLUMETRIC MESH GOLDFISH RENDERER
+      // Precomputed LUTs + optimal polygon count (11x10) for smooth 60fps,
+      // sleek laterally-compressed goldfish proportions, Blinn-Phong lighting,
+      // expressive large "paku-paku" mouth, both 3D eyes, and 3D silk fins.
+      // ============================================================
+      const FISH_STATIONS = [0.0, 0.05, 0.14, 0.25, 0.40, 0.58, 0.76, 0.90, 1.0];
+      // True goldfish proportions: laterally compressed (~half width of a pufferfish!),
+      // with a natural rounded goldfish snout, graceful arched back, and slender caudal peduncle.
+      const FISH_HALF_W   = [0.026, 0.056, 0.092, 0.114, 0.122, 0.094, 0.054, 0.026, 0.018];
+      const FISH_TOP_H    = [0.032, 0.078, 0.144, 0.205, 0.232, 0.202, 0.138, 0.074, 0.042];
+      const FISH_BOT_H    = [0.030, 0.074, 0.140, 0.214, 0.252, 0.212, 0.134, 0.070, 0.040];
+
+      const FISH_S_STEPS = 11;
+      const FISH_T_STEPS = 10;
+
+      // Precomputed constant light & Blinn-Phong half-vector
+      const FISH_SUN_LEN = Math.hypot(-0.42, -0.78, 0.46);
+      const FISH_LX = -0.42 / FISH_SUN_LEN;
+      const FISH_LY = -0.78 / FISH_SUN_LEN;
+      const FISH_LZ = 0.46 / FISH_SUN_LEN;
+      const FISH_H_LEN = Math.hypot(FISH_LX, FISH_LY, FISH_LZ + 1);
+      const FISH_HX = FISH_LX / FISH_H_LEN;
+      const FISH_HY = FISH_LY / FISH_H_LEN;
+      const FISH_HZ = (FISH_LZ + 1) / FISH_H_LEN;
+
+      function sampleCurve(arr, s) {
+        if (s <= 0) return arr[0];
+        if (s >= 1) return arr[arr.length - 1];
+        for (let i = 0; i < FISH_STATIONS.length - 1; i++) {
+          const s0 = FISH_STATIONS[i];
+          const s1 = FISH_STATIONS[i + 1];
+          if (s >= s0 && s <= s1) {
+            const t = (s - s0) / (s1 - s0);
+            const u = 0.5 - 0.5 * Math.cos(t * Math.PI);
+            return arr[i] + (arr[i + 1] - arr[i]) * u;
+          }
+        }
+        return arr[arr.length - 1];
+      }
+
+      function smoothstep(edge0, edge1, x) {
+        const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+        return t * t * (3 - 2 * t);
+      }
+
+      // Evaluate organic 3D skin pigmentation (r, g, b) in fish surface UV (s, theta)
+      function getFishSkinColor(pattern, s, theta) {
+        const sinT = Math.sin(theta); // -1 = dorsal back, +1 = belly
+        const cosT = Math.cos(theta); // +1 = right flank, -1 = left flank
+
+        if (pattern === 'sarasa') {
+          let r = lerp(218, 248, smoothstep(-0.8, 0.5, sinT));
+          let g = lerp(28, 78, smoothstep(-0.7, 0.6, sinT));
+          let b = lerp(12, 34, smoothstep(-0.6, 0.7, sinT));
+
+          const saddleDist = Math.hypot((s - 0.52) * 2.5, (sinT - 0.22) * 1.15 - cosT * 0.18);
+          const tailBandDist = Math.hypot((s - 0.84) * 3.8, (sinT - 0.05) * 1.1);
+          const bellyWhite = smoothstep(0.35, 0.85, sinT) * smoothstep(0.12, 0.32, s) * (1 - smoothstep(0.78, 0.96, s));
+          const patch = clamp(
+            Math.max(
+              1 - smoothstep(0.38, 0.62, saddleDist),
+              (1 - smoothstep(0.32, 0.56, tailBandDist)) * 0.95,
+              bellyWhite * 0.88
+            ),
+            0, 1
+          );
+          r = lerp(r, 250, patch);
+          g = lerp(g, 244, patch);
+          b = lerp(b, 238, patch);
+          return [r, g, b];
+        }
+
+        if (pattern === 'gold') {
+          const dorsal = smoothstep(-0.2, -0.95, sinT);
+          const belly = smoothstep(0.2, 0.95, sinT);
+          let r = 248;
+          let g = 114;
+          let b = 22;
+          r = lerp(r, 186, dorsal);
+          g = lerp(g, 52, dorsal);
+          b = lerp(b, 10, dorsal);
+          r = lerp(r, 255, belly);
+          g = lerp(g, 224, belly);
+          b = lerp(b, 148, belly);
+          return [r, g, b];
+        }
+
+        // Tancho (丹頂): Silky mother-of-pearl ivory-white with ruby-crimson 3D forehead crown
+        const belly = smoothstep(0.25, 0.95, sinT);
+        const dorsal = smoothstep(-0.35, -0.95, sinT);
+        let r = lerp(246, 224, dorsal * 0.5);
+        let g = lerp(249, 234, dorsal * 0.5);
+        let b = lerp(253, 244, dorsal * 0.5);
+        r = lerp(r, 232, belly * 0.45);
+        g = lerp(g, 240, belly * 0.45);
+        b = lerp(b, 248, belly * 0.45);
+
+        const crownDist = Math.hypot((s - 0.145) * 6.8, (sinT + 0.92) * 1.9, cosT * 1.05);
+        const crown = 1 - smoothstep(0.55, 0.88, crownDist);
+        r = lerp(r, 224, crown);
+        g = lerp(g, 26, crown);
+        b = lerp(b, 24, crown);
+        return [r, g, b];
+      }
+
+      // Precompute ring geometry & UV skin color lookup tables once (huge FPS boost!)
+      const FISH_RING_LUT = [];
+      for (let i = 0; i <= FISH_S_STEPS; i++) {
+        const s = i / FISH_S_STEPS;
+        const hw = sampleCurve(FISH_HALF_W, s);
+        const th = sampleCurve(FISH_TOP_H, s);
+        const bh = sampleCurve(FISH_BOT_H, s);
+        const sA = Math.max(0, s - 0.03);
+        const sB = Math.min(1, s + 0.03);
+        const rA = (sampleCurve(FISH_HALF_W, sA) + sampleCurve(FISH_TOP_H, sA)) * 0.5;
+        const rB = (sampleCurve(FISH_HALF_W, sB) + sampleCurve(FISH_TOP_H, sB)) * 0.5;
+        const drds = (rB - rA) / Math.max(0.01, sB - sA);
+        FISH_RING_LUT.push({ s, hw, th, bh, drds });
+      }
+
+      const FISH_THETA_LUT = [];
+      for (let j = 0; j < FISH_T_STEPS; j++) {
+        const theta = (j / FISH_T_STEPS) * Math.PI * 2;
+        const c = Math.cos(theta);
+        const sn = Math.sin(theta);
+        const bellyBulge = 1 + 0.10 * Math.max(0, sn) * (1 - sn * sn);
+        FISH_THETA_LUT.push({ theta, c, sn, bellyBulge });
+      }
+
+      const FISH_CROWN_LUT = [];
+      for (let i = 0; i <= FISH_S_STEPS; i++) {
+        const s = FISH_RING_LUT[i].s;
+        const row = [];
+        for (let j = 0; j < FISH_T_STEPS; j++) {
+          const { c, sn } = FISH_THETA_LUT[j];
+          let bump = 0;
+          if (sn < -0.3) {
+            const cd = Math.hypot((s - 0.145) * 6.8, (sn + 0.92) * 1.9, c * 1.05);
+            bump = (1 - smoothstep(0.45, 0.95, cd)) * 0.028;
+          }
+          row.push(bump);
+        }
+        FISH_CROWN_LUT.push(row);
+      }
+
+      const FISH_SKIN_LUT = {};
+      for (const pat of ['sarasa', 'gold', 'tancho']) {
+        const grid = [];
+        for (let i = 0; i < FISH_S_STEPS; i++) {
+          const sMid = (i + 0.5) / FISH_S_STEPS;
+          const row = [];
+          for (let j = 0; j < FISH_T_STEPS; j++) {
+            const thetaMid = ((j + 0.5) / FISH_T_STEPS) * Math.PI * 2;
+            row.push(getFishSkinColor(pat, sMid, thetaMid));
+          }
+          grid.push(row);
+        }
+        FISH_SKIN_LUT[pat] = {
+          grid,
+          nose: getFishSkinColor(pat, 0.02, 0)
+        };
+      }
+
+      function drawGoldfish(f) {
+        const depthScale = 1 + (f.z / BOWL.r) * 0.16;
+        const L = f.length;
+        const wMul = f.bodyWidth / 0.39;
+
+        const cosY = Math.cos(f.yaw);
+        const sinY = Math.sin(f.yaw);
+        const cosP = Math.cos(f.pitch);
+        const sinP = Math.sin(f.pitch);
+        const cosR = Math.cos(f.roll || 0);
+        const sinR = Math.sin(f.roll || 0);
+
+        function toCamera(lx, ly, lz) {
+          const y1 = ly * cosR - lz * sinR;
+          const z1 = ly * sinR + lz * cosR;
+          const x2 = lx * cosP - y1 * sinP;
+          const y2 = lx * sinP + y1 * cosP;
+          const wx = x2 * cosY - z1 * sinY;
+          const wy = y2;
+          const wz = x2 * sinY + z1 * cosY;
+          const persp = 520 / (520 - wz);
+          return { wx, wy, wz, sx: wx * persp, sy: wy * persp, persp };
+        }
+
+        function rotateNormal(nx, ny, nz) {
+          const y1 = ny * cosR - nz * sinR;
+          const z1 = ny * sinR + nz * cosR;
+          const x2 = nx * cosP - y1 * sinP;
+          const y2 = nx * sinP + y1 * cosP;
+          const wx = x2 * cosY - z1 * sinY;
+          const wy = y2;
+          const wz = x2 * sinY + z1 * cosY;
+          const len = Math.hypot(wx, wy, wz) || 1;
+          return { x: wx / len, y: wy / len, z: wz / len };
+        }
+
+        function evalSpine(s) {
+          const lx = (0.44 - s) * L;
+          const lz = Math.sin(f.swimPhase - s * 4.2) * (0.014 + 0.145 * s * s) * L * f.wiggleAmp;
+          return { lx, ly: 0, lz };
+        }
+
+        const S_STEPS = FISH_S_STEPS;
+        const T_STEPS = FISH_T_STEPS;
+        const skinData = FISH_SKIN_LUT[f.pattern];
+        const rings = [];
+        const spineFrames = [];
+
+        // Build lightweight 11x10 3D cross-section rings using precomputed LUTs
+        for (let i = 0; i <= S_STEPS; i++) {
+          const lut = FISH_RING_LUT[i];
+          const s = lut.s;
+          const sp = evalSpine(s);
+          const spPrev = evalSpine(Math.max(0, s - 0.025));
+          const spNext = evalSpine(Math.min(1, s + 0.025));
+          let fx = -(spNext.lx - spPrev.lx);
+          let fz = -(spNext.lz - spPrev.lz);
+          const fl = Math.hypot(fx, fz) || 1;
+          fx /= fl;
+          fz /= fl;
+          const latX = -fz;
+          const latZ = fx;
+
+          const hw = lut.hw * L * wMul;
+          const th = lut.th * L * wMul;
+          const bh = lut.bh * L * wMul;
+          const drds = lut.drds;
+          const nFwd = clamp(drds * 0.78, -0.75, 0.85);
+          const invHw = 1 / Math.max(0.06, lut.hw * wMul * 5.2);
+
+          spineFrames.push({ s, sp, fx, fz, latX, latZ, hw, th, bh, drds });
+
+          const ring = [];
+          const crownRow = f.pattern === 'tancho' ? FISH_CROWN_LUT[i] : null;
+          for (let j = 0; j < T_STEPS; j++) {
+            const { c, sn, bellyBulge } = FISH_THETA_LUT[j];
+            const crownBump = crownRow ? crownRow[j] * L : 0;
+            const vR = (sn < 0 ? th : bh) + crownBump;
+            const latOff = c * hw * bellyBulge;
+            const px = sp.lx + latX * latOff;
+            const py = sp.ly + sn * vR;
+            const pz = sp.lz + latZ * latOff;
+
+            const nLat = c * invHw;
+            const nY = sn / Math.max(0.08, (vR / L) * 3.6);
+            const nl = Math.hypot(nFwd, nLat, nY) || 1;
+            const camP = toCamera(px, py, pz);
+            const camN = rotateNormal((fx * nFwd + latX * nLat) / nl, nY / nl, (fz * nFwd + latZ * nLat) / nl);
+            ring.push({ wz: camP.wz, sx: camP.sx, sy: camP.sy, nx: camN.x, ny: camN.y, nz: camN.z });
+          }
+          rings.push(ring);
+        }
+
+        const drawList = [];
+
+        function pushBodyQuad(p00, p10, p11, p01, sMid, i, j) {
+          let nx = p00.nx + p10.nx + p11.nx + p01.nx;
+          let ny = p00.ny + p10.ny + p11.ny + p01.ny;
+          let nz = p00.nz + p10.nz + p11.nz + p01.nz;
+          const nl = Math.hypot(nx, ny, nz) || 1;
+          nx /= nl; ny /= nl; nz /= nl;
+
+          if (nz < -0.18) return;
+
+          const wz = (p00.wz + p10.wz + p11.wz + p01.wz) * 0.25;
+          const baseRgb = skinData.grid[i][j];
+
+          const diff = Math.max(0, nx * FISH_LX + ny * FISH_LY + nz * FISH_LZ);
+          const ndh = Math.max(0, nx * FISH_HX + ny * FISH_HY + nz * FISH_HZ);
+          // Fast specular approximation (pow^24 via squaring: x^2 -> x^4 -> x^8 -> x^24)
+          const n2 = ndh * ndh;
+          const n4 = n2 * n2;
+          const n8 = n4 * n4;
+          const spec = n8 * n8 * n8;
+          const sheen = n4 * ndh * 0.16;
+
+          const bounce = Math.max(0, ny * 0.85 + 0.15);
+          const oneMinusNz = 1 - clamp(nz, 0, 1);
+          const fresnel = oneMinusNz * oneMinusNz;
+          const depthTint = clamp(1 + wz / 340, 0.80, 1.08);
+
+          let scaleMod = 1.0;
+          let scaleGlint = 0;
+          if (sMid > 0.24 && sMid < 0.88) {
+            const isAlt = ((i + j) & 1) === 0;
+            scaleMod = isAlt ? 1.04 : 0.95;
+            if (diff > 0.35 && nz > 0.25) {
+              const shimmer = 0.5 + 0.5 * Math.sin(f.swimPhase * 1.15 - i * 0.75 + j * 0.6);
+              scaleGlint = (isAlt ? 1 : 0.45) * diff * shimmer * 30;
+            }
+          }
+
+          const lit = (0.34 + 0.68 * diff) * scaleMod * depthTint;
+          const R = clamp(Math.round(baseRgb[0] * lit + bounce * 22 + spec * 170 + sheen * 55 + fresnel * 28 + scaleGlint), 0, 255);
+          const G = clamp(Math.round(baseRgb[1] * lit + bounce * 48 + spec * 172 + sheen * 58 + fresnel * 44 + scaleGlint), 0, 255);
+          const B = clamp(Math.round(baseRgb[2] * lit + bounce * 60 + spec * 178 + sheen * 64 + fresnel * 54 + scaleGlint), 0, 255);
+
+          drawList.push({
+            wz,
+            kind: 'quad',
+            pts: [p00, p10, p11, p01],
+            color: `rgb(${R},${G},${B})`
+          });
+        }
+
+        // Assemble 3D body quads (11x10 = 110 max, ~55 visible!)
+        for (let i = 0; i < S_STEPS; i++) {
+          const r0 = rings[i];
+          const r1 = rings[i + 1];
+          const sMid = (i + 0.5) / S_STEPS;
+          for (let j = 0; j < T_STEPS; j++) {
+            const jNext = (j + 1) % T_STEPS;
+            pushBodyQuad(r0[j], r1[j], r1[jNext], r0[jNext], sMid, i, j);
+          }
+        }
+
+        // Expressive "paku-paku" rhythmic breathing / gulping cycle!
+        const foodBoost = foods.length > 0 ? 1.25 : 1.0;
+        const mouthWave = 0.5 + 0.5 * Math.sin(elapsed * (4.8 * foodBoost) + f.id * 2.1);
+        const mouthOpen = Math.pow(mouthWave, 1.35);
+
+        // Front rounded nose cap (slightly puffs forward with rhythmic paku-paku breathing)
+        const noseFrame = spineFrames[0];
+        const snoutExt = L * (0.012 + 0.009 * mouthOpen);
+        const noseTip = toCamera(
+          noseFrame.sp.lx + noseFrame.fx * snoutExt,
+          -L * 0.004,
+          noseFrame.sp.lz + noseFrame.fz * snoutExt
+        );
+        const noseN = rotateNormal(noseFrame.fx, 0, noseFrame.fz);
+        let capCol = 'rgb(240,120,90)';
+        if (noseN.z > -0.15) {
+          const noseRgb = skinData.nose;
+          const diff = Math.max(0, noseN.x * FISH_LX + noseN.y * FISH_LY + noseN.z * FISH_LZ);
+          const ndh = Math.max(0, noseN.x * FISH_HX + noseN.y * FISH_HY + noseN.z * FISH_HZ);
+          const n4 = ndh * ndh * ndh * ndh;
+          const spec = n4 * n4 * n4;
+          const lit = 0.36 + 0.66 * diff;
+          const R = clamp(Math.round(noseRgb[0] * lit + spec * 150), 0, 255);
+          const G = clamp(Math.round(noseRgb[1] * lit + spec * 150), 0, 255);
+          const B = clamp(Math.round(noseRgb[2] * lit + spec * 155), 0, 255);
+          capCol = `rgb(${R},${G},${B})`;
+          for (let j = 0; j < T_STEPS; j++) {
+            const jNext = (j + 1) % T_STEPS;
+            const a = rings[0][j];
+            const b = rings[0][jNext];
+            drawList.push({
+              wz: (noseTip.wz + a.wz + b.wz) / 3,
+              kind: 'quad',
+              pts: [noseTip, a, b, noseTip],
+              color: capCol
+            });
+          }
+        }
+
+        // --- TRUE 3D INTEGRATED "PAKU-PAKU" MOUTH (4 anatomical 3D lip points right on the snout!) ---
+        // Seamlessly transitions between front oval "O" and side-profile opening jaw with zero detachment.
+        if (noseN.z > -0.35) {
+          const lipFwd = L * (0.014 + 0.012 * mouthOpen);
+          const cornerBack = -L * 0.032;
+          const cornerLat = L * (0.036 + 0.008 * mouthOpen);
+          const mTop = toCamera(
+            noseFrame.sp.lx + noseFrame.fx * lipFwd,
+            -L * (0.006 + 0.012 * mouthOpen),
+            noseFrame.sp.lz + noseFrame.fz * lipFwd
+          );
+          const mBot = toCamera(
+            noseFrame.sp.lx + noseFrame.fx * (lipFwd * 0.92),
+            L * (0.014 + 0.034 * mouthOpen),
+            noseFrame.sp.lz + noseFrame.fz * (lipFwd * 0.92)
+          );
+          const mRight = toCamera(
+            noseFrame.sp.lx + noseFrame.fx * cornerBack + noseFrame.latX * cornerLat,
+            L * 0.008,
+            noseFrame.sp.lz + noseFrame.fz * cornerBack + noseFrame.latZ * cornerLat
+          );
+          const mLeft = toCamera(
+            noseFrame.sp.lx + noseFrame.fx * cornerBack - noseFrame.latX * cornerLat,
+            L * 0.008,
+            noseFrame.sp.lz + noseFrame.fz * cornerBack - noseFrame.latZ * cornerLat
+          );
+          drawList.push({
+            wz: Math.max(mTop.wz, mBot.wz, mRight.wz, mLeft.wz) + 1.8,
+            kind: 'mouth',
+            top: mTop,
+            bot: mBot,
+            right: mRight,
+            left: mLeft,
+            open: mouthOpen,
+            scale: L / 68,
+            lipCol: capCol
+          });
+        }
+
+        // --- BOTH Left & Right 3D Glossy Eyes (sleekly seated on goldfish head) ---
+        const eyeIdx = Math.round(0.135 * S_STEPS);
+        const eyeF = spineFrames[eyeIdx];
+        for (const side of [-1, 1]) {
+          // Right eye (side=+1) at theta=-0.20, Left eye (side=-1) at theta=PI+0.20
+          const eyeTheta = side > 0 ? -0.20 : Math.PI + 0.20;
+          const c = Math.cos(eyeTheta);
+          const sn = Math.sin(eyeTheta);
+          const ex = eyeF.sp.lx + eyeF.latX * (c * eyeF.hw * 0.98);
+          const ey = eyeF.sp.ly + sn * eyeF.th * 0.92;
+          const ez = eyeF.sp.lz + eyeF.latZ * (c * eyeF.hw * 0.98);
+          const ePos = toCamera(ex, ey, ez);
+          const eNorm = rotateNormal(eyeF.latX * c * 0.96 + eyeF.fx * 0.22, sn * 0.30, eyeF.latZ * c * 0.96 + eyeF.fz * 0.22);
+
+          // Render whenever eye isn't hidden on the far backside of the head
+          if (eNorm.z > -0.10) {
+            const eyeR = (2.85 + (L - 60) * 0.025) * ePos.persp;
+            drawList.push({
+              wz: ePos.wz + 2.4,
+              kind: 'eye',
+              x: ePos.sx,
+              y: ePos.sy,
+              r: eyeR,
+              nx: eNorm.x,
+              ny: eNorm.y,
+              nz: eNorm.z
+            });
+          }
+        }
+
+        // --- Left & Right 3D Gill Cover Curves (鰓蓋) ---
+        const gillIdx = Math.round(0.25 * S_STEPS);
+        const gillF = spineFrames[gillIdx];
+        const gillBreath = Math.sin(elapsed * 4.4 + f.id * 1.8) * 0.9;
+        for (const side of [-1, 1]) {
+          const midTheta = side > 0 ? 0.25 : Math.PI - 0.25;
+          const gNorm = rotateNormal(gillF.latX * Math.cos(midTheta), 0.15, gillF.latZ * Math.cos(midTheta));
+          if (gNorm.z > 0.22) {
+            const pts = [];
+            let zSum = 0;
+            for (let k = 0; k <= 5; k++) {
+              const u = k / 5;
+              const th = side > 0 ? lerp(-0.35, 0.92, u) : lerp(Math.PI + 0.35, Math.PI - 0.92, u);
+              const cc = Math.cos(th);
+              const ss = Math.sin(th);
+              const bulge = 1 + 0.10 * Math.max(0, ss) * (1 - ss * ss);
+              const backCurve = -Math.sin(u * Math.PI) * (L * 0.045 + gillBreath);
+              const vr = ss < 0 ? gillF.th : gillF.bh;
+              const gx = gillF.sp.lx + gillF.fx * backCurve + gillF.latX * (cc * gillF.hw * bulge * 1.02);
+              const gy = gillF.sp.ly + ss * vr * 0.98;
+              const gz = gillF.sp.lz + gillF.fz * backCurve + gillF.latZ * (cc * gillF.hw * bulge * 1.02);
+              const gp = toCamera(gx, gy, gz);
+              pts.push(gp);
+              zSum += gp.wz;
+            }
+            drawList.push({
+              wz: zSum / pts.length + 1.2,
+              kind: 'gill',
+              pts,
+              alpha: clamp((gNorm.z - 0.18) * 1.2, 0, 0.72),
+              color: f.shadowTint
+            });
+          }
+        }
+
+        // --- Helper: Push a True 3D Translucent Silk Fin Panel ---
+        function push3DFin(pts3D, rayPairs3D, rootCol, midCol, edgeCol, zBias = 0) {
+          const proj = pts3D.map((p) => toCamera(p[0], p[1], p[2]));
+          let zAvg = 0;
+          for (const p of proj) zAvg += p.wz;
+          zAvg /= proj.length;
+
+          const rays = rayPairs3D.map(([a, b]) => [
+            toCamera(a[0], a[1], a[2]),
+            toCamera(b[0], b[1], b[2])
+          ]);
+          drawList.push({
+            wz: zAvg + zBias,
+            kind: 'fin',
+            pts: proj,
+            rays,
+            rootCol,
+            midCol,
+            edgeCol,
+            rayColor: f.rayColor
+          });
+        }
+
+        // --- TRUE 3D 4-LOBE BLOOMING VEIL TAIL (四ツ尾) ---
+        // Long, graceful flowing goldfish silk tail flaring gently in 3D space
+        const tailF = spineFrames[S_STEPS];
+        const tailLen = L * 0.80;
+        const tailLobes = [
+          { upSign: -1, latSign: +1, spreadY: 0.32, spreadZ: 0.10, lenMul: 1.06, phase: 0.0 },
+          { upSign: -1, latSign: -1, spreadY: 0.30, spreadZ: 0.10, lenMul: 1.00, phase: -0.5 },
+          { upSign: +1, latSign: +1, spreadY: 0.29, spreadZ: 0.09, lenMul: 0.98, phase: 0.75 },
+          { upSign: +1, latSign: -1, spreadY: 0.27, spreadZ: 0.09, lenMul: 0.94, phase: 0.3 }
+        ];
+
+        for (const lb of tailLobes) {
+          const lLen = tailLen * lb.lenMul;
+          const backX = -tailF.fx;
+          const backZ = -tailF.fz;
+          const w1 = Math.sin(f.swimPhase - 4.7 + lb.phase) * L * 0.14 * f.wiggleAmp;
+          const w2 = Math.sin(f.swimPhase - 5.9 + lb.phase) * L * 0.22 * f.wiggleAmp;
+
+          // Build 3D curved ribbon points for the lobe (root -> mid-outer -> tip -> mid-notch -> inner)
+          const pRoot = [tailF.sp.lx, tailF.sp.ly + lb.upSign * L * 0.02, tailF.sp.lz];
+          const pMidOut = [
+            tailF.sp.lx + backX * (lLen * 0.50) + tailF.latX * (lb.latSign * L * lb.spreadZ * 0.7 + w1 * 0.55),
+            tailF.sp.ly + lb.upSign * L * lb.spreadY * 0.78,
+            tailF.sp.lz + backZ * (lLen * 0.50) + tailF.latZ * (lb.latSign * L * lb.spreadZ * 0.7 + w1 * 0.55)
+          ];
+          const pTip = [
+            tailF.sp.lx + backX * lLen + tailF.latX * (lb.latSign * L * lb.spreadZ + w2 * 0.75),
+            tailF.sp.ly + lb.upSign * L * lb.spreadY * 1.05,
+            tailF.sp.lz + backZ * lLen + tailF.latZ * (lb.latSign * L * lb.spreadZ + w2 * 0.75)
+          ];
+          const pMidTrail = [
+            tailF.sp.lx + backX * (lLen * 0.80) + tailF.latX * (lb.latSign * L * lb.spreadZ * 0.45 + w2 * 0.52),
+            tailF.sp.ly + lb.upSign * L * lb.spreadY * 0.45,
+            tailF.sp.lz + backZ * (lLen * 0.80) + tailF.latZ * (lb.latSign * L * lb.spreadZ * 0.45 + w2 * 0.52)
+          ];
+          const pNotch = [
+            tailF.sp.lx + backX * (lLen * 0.52) + tailF.latX * (lb.latSign * L * lb.spreadZ * 0.22 + w1 * 0.38),
+            tailF.sp.ly + lb.upSign * L * 0.03,
+            tailF.sp.lz + backZ * (lLen * 0.52) + tailF.latZ * (lb.latSign * L * lb.spreadZ * 0.22 + w1 * 0.38)
+          ];
+
+          const rays = [];
+          for (let r = 0; r < 4; r++) {
+            const u = (r + 0.5) / 4;
+            const endPt = [
+              lerp(pNotch[0], pTip[0], u),
+              lerp(pNotch[1], pTip[1], u),
+              lerp(pNotch[2], pTip[2], u)
+            ];
+            rays.push([pRoot, endPt]);
+          }
+          push3DFin([pRoot, pMidOut, pTip, pMidTrail, pNotch], rays, f.finRoot, f.finMid, f.finEdge, -1.5);
+        }
+
+        // --- TRUE 3D DORSAL FIN (背びれ) curving along dorsal spine crest ---
+        const dWave = Math.sin(f.swimPhase - 2.3) * L * 0.05 * f.wiggleAmp;
+        const dA = spineFrames[Math.round(0.28 * S_STEPS)];
+        const dB = spineFrames[Math.round(0.46 * S_STEPS)];
+        const dC = spineFrames[Math.round(0.68 * S_STEPS)];
+        const dD = spineFrames[Math.round(0.78 * S_STEPS)];
+        const dPts = [
+          [dA.sp.lx, -dA.th * 0.92, dA.sp.lz],
+          [dB.sp.lx - dB.fx * L * 0.05 + dB.latX * dWave * 0.4, -dB.th - L * 0.19, dB.sp.lz - dB.fz * L * 0.05 + dB.latZ * dWave * 0.4],
+          [dD.sp.lx - dD.fx * L * 0.14 + dD.latX * dWave, -dC.th - L * 0.14, dD.sp.lz - dD.fz * L * 0.14 + dD.latZ * dWave],
+          [dD.sp.lx, -dD.th * 0.82, dD.sp.lz],
+          [dC.sp.lx, -dC.th * 0.88, dC.sp.lz]
+        ];
+        const dRays = [];
+        for (let r = 0; r < 5; r++) {
+          const u = r / 4;
+          const sf = spineFrames[Math.round(lerp(0.30, 0.74, u) * S_STEPS)];
+          dRays.push([
+            [sf.sp.lx, -sf.th * 0.88, sf.sp.lz],
+            [lerp(dPts[1][0], dPts[2][0], u), lerp(dPts[1][1], dPts[2][1], u), lerp(dPts[1][2], dPts[2][2], u)]
+          ]);
+        }
+        push3DFin(dPts, dRays, f.finRoot, f.finMid, f.finEdge, 0);
+
+        // --- TRUE 3D LEFT & RIGHT PECTORAL FINS (左右の胸びれ) ---
+        // Flare outward to BOTH sides (+lat and -lat) so front-on views show symmetrical flapping fins!
+        const pecF = spineFrames[Math.round(0.29 * S_STEPS)];
+        const pecWave = Math.sin(f.swimPhase * 1.15 + 1.1);
+        for (const side of [-1, 1]) {
+          const flare = 0.24 + (side > 0 ? pecWave : -pecWave) * 0.05;
+          const root = [
+            pecF.sp.lx + pecF.latX * (side * pecF.hw * 0.88),
+            pecF.bh * 0.56,
+            pecF.sp.lz + pecF.latZ * (side * pecF.hw * 0.88)
+          ];
+          const lead = [
+            root[0] - pecF.fx * (L * 0.10) + pecF.latX * (side * L * flare),
+            root[1] + L * 0.08,
+            root[2] - pecF.fz * (L * 0.10) + pecF.latZ * (side * L * flare)
+          ];
+          const tip = [
+            root[0] - pecF.fx * (L * 0.24) + pecF.latX * (side * L * (flare + 0.06)),
+            root[1] + L * 0.17,
+            root[2] - pecF.fz * (L * 0.24) + pecF.latZ * (side * L * (flare + 0.06))
+          ];
+          const trail = [
+            root[0] - pecF.fx * (L * 0.20) + pecF.latX * (side * L * (flare * 0.55)),
+            root[1] + L * 0.19,
+            root[2] - pecF.fz * (L * 0.20) + pecF.latZ * (side * L * (flare * 0.55))
+          ];
+          const pRays = [
+            [root, lead],
+            [root, [lerp(lead[0], tip[0], 0.5), lerp(lead[1], tip[1], 0.5), lerp(lead[2], tip[2], 0.5)]],
+            [root, tip],
+            [root, trail]
+          ];
+          push3DFin([root, lead, tip, trail], pRays, f.finRoot, f.finMid, f.finEdge, 1.0);
+        }
+
+        // --- TRUE 3D PELVIC (腹びれ左右) & ANAL FIN (尻びれ) ---
+        const pelF = spineFrames[Math.round(0.48 * S_STEPS)];
+        for (const side of [-1, 1]) {
+          const r0 = [pelF.sp.lx + pelF.latX * (side * pelF.hw * 0.34), pelF.bh * 0.88, pelF.sp.lz + pelF.latZ * (side * pelF.hw * 0.34)];
+          const r1 = [r0[0] - pelF.fx * L * 0.14 + pelF.latX * (side * L * 0.11), r0[1] + L * 0.16, r0[2] - pelF.fz * L * 0.14 + pelF.latZ * (side * L * 0.11)];
+          const r2 = [r0[0] - pelF.fx * L * 0.22 + pelF.latX * (side * L * 0.07), r0[1] + L * 0.14, r0[2] - pelF.fz * L * 0.22 + pelF.latZ * (side * L * 0.07)];
+          const r3 = [r0[0] - pelF.fx * L * 0.12, r0[1] + L * 0.02, r0[2] - pelF.fz * L * 0.12];
+          push3DFin([r0, r1, r2, r3], [[r0, r1], [r0, r2]], f.finRoot, f.finMid, f.finEdge, 0.4);
+        }
+
+        const anA = spineFrames[Math.round(0.72 * S_STEPS)];
+        const anB = spineFrames[Math.round(0.86 * S_STEPS)];
+        const anPts = [
+          [anA.sp.lx, anA.bh * 0.85, anA.sp.lz],
+          [anB.sp.lx - anB.fx * L * 0.10 + anB.latX * dWave * 0.5, anB.bh + L * 0.17, anB.sp.lz - anB.fz * L * 0.10 + anB.latZ * dWave * 0.5],
+          [anB.sp.lx - anB.fx * L * 0.18 + anB.latX * dWave * 0.8, anB.bh + L * 0.11, anB.sp.lz - anB.fz * L * 0.18 + anB.latZ * dWave * 0.8],
+          [anB.sp.lx, anB.bh * 0.78, anB.sp.lz]
+        ];
+        push3DFin(anPts, [[anPts[0], anPts[1]], [anPts[0], anPts[2]]], f.finRoot, f.finMid, f.finEdge, 0);
+
+        // Sort ALL 3D primitives back-to-front by camera wz
+        drawList.sort((a, b) => a.wz - b.wz);
+
+        // Render sorted 3D goldfish onto canvas
+        ctx.save();
+        ctx.translate(f.x, f.y);
+        ctx.scale(depthScale, depthScale);
+        const backVeil = clamp((f.z + BOWL.r) / (BOWL.r * 2), 0, 1);
+        ctx.globalAlpha = 0.90 + backVeil * 0.10;
+
+        for (const item of drawList) {
+          if (item.kind === 'quad') {
+            const p = item.pts;
+            // Expand quad slightly from centroid (0.62px) and fill ONLY (zero stroke overhead = ~2x faster!)
+            const cx2 = (p[0].sx + p[1].sx + p[2].sx + p[3].sx) * 0.25;
+            const cy2 = (p[0].sy + p[1].sy + p[2].sy + p[3].sy) * 0.25;
+            ctx.fillStyle = item.color;
+            ctx.beginPath();
+            for (let k = 0; k < 4; k++) {
+              const dx = p[k].sx - cx2;
+              const dy = p[k].sy - cy2;
+              const dl = Math.hypot(dx, dy) || 1;
+              const ex = p[k].sx + (dx / dl) * 0.62;
+              const ey = p[k].sy + (dy / dl) * 0.62;
+              if (k === 0) ctx.moveTo(ex, ey);
+              else ctx.lineTo(ex, ey);
+            }
+            ctx.closePath();
+            ctx.fill();
+          } else if (item.kind === 'fin') {
+            const pts = item.pts;
+            const p0 = pts[0];
+            const pFar = pts[Math.floor(pts.length / 2)];
+            const g = ctx.createLinearGradient(p0.sx, p0.sy, pFar.sx, pFar.sy);
+            g.addColorStop(0, item.rootCol);
+            g.addColorStop(0.52, item.midCol);
+            g.addColorStop(1, item.edgeCol);
+
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.moveTo(pts[0].sx, pts[0].sy);
+            for (let k = 1; k < pts.length; k++) {
+              const prev = pts[k - 1];
+              const cur = pts[k];
+              if (k === 1) ctx.lineTo(cur.sx, cur.sy);
+              else ctx.quadraticCurveTo(prev.sx, prev.sy, (prev.sx + cur.sx) * 0.5, (prev.sy + cur.sy) * 0.5);
+            }
+            ctx.lineTo(pts[pts.length - 1].sx, pts[pts.length - 1].sy);
+            ctx.closePath();
+            ctx.fill();
+
+            // Batch all silk fin rays into ONE stroke call!
+            ctx.strokeStyle = item.rayColor;
+            ctx.lineWidth = 0.68;
+            ctx.beginPath();
+            for (const [ra, rb] of item.rays) {
+              ctx.moveTo(ra.sx, ra.sy);
+              ctx.lineTo(rb.sx, rb.sy);
+            }
+            ctx.stroke();
+          } else if (item.kind === 'gill') {
+            ctx.save();
+            ctx.globalAlpha *= item.alpha;
+            ctx.strokeStyle = item.color;
+            ctx.lineWidth = 1.5;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(item.pts[0].sx, item.pts[0].sy);
+            for (let k = 1; k < item.pts.length; k++) {
+              ctx.lineTo(item.pts[k].sx, item.pts[k].sy);
+            }
+            ctx.stroke();
+            ctx.restore();
+          } else if (item.kind === 'mouth') {
+            // True 3D projected 4-point anatomical mouth integrated directly onto the snout!
+            const t = item.top;
+            const b = item.bot;
+            const r = item.right;
+            const l = item.left;
+
+            // Smooth closed oval curve through top -> right -> bot -> left
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(t.sx, t.sy);
+            ctx.quadraticCurveTo(
+              (t.sx + r.sx) * 0.5 + (r.sx - l.sx) * 0.06,
+              (t.sy + r.sy) * 0.5 - (b.sy - t.sy) * 0.14,
+              r.sx, r.sy
+            );
+            ctx.quadraticCurveTo(
+              (b.sx + r.sx) * 0.5 + (r.sx - l.sx) * 0.06,
+              (b.sy + r.sy) * 0.5 + (b.sy - t.sy) * 0.14,
+              b.sx, b.sy
+            );
+            ctx.quadraticCurveTo(
+              (b.sx + l.sx) * 0.5 - (r.sx - l.sx) * 0.06,
+              (b.sy + l.sy) * 0.5 + (b.sy - t.sy) * 0.14,
+              l.sx, l.sy
+            );
+            ctx.quadraticCurveTo(
+              (t.sx + l.sx) * 0.5 - (r.sx - l.sx) * 0.06,
+              (t.sy + l.sy) * 0.5 - (b.sy - t.sy) * 0.14,
+              t.sx, t.sy
+            );
+            ctx.closePath();
+
+            // Natural fleshy outer lip rim matching snout skin color
+            ctx.strokeStyle = item.lipCol;
+            ctx.lineWidth = (2.2 + 0.5 * item.open) * item.scale;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            // Dark open interior mouth cavity
+            ctx.fillStyle = 'rgba(48, 12, 10, 0.90)';
+            ctx.fill();
+
+            // Delicate wet highlight on lower lip rim
+            ctx.strokeStyle = 'rgba(255, 245, 238, 0.42)';
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(r.sx, r.sy);
+            ctx.quadraticCurveTo(b.sx, b.sy + 0.8, l.sx, l.sy);
+            ctx.stroke();
+            ctx.restore();
+          } else if (item.kind === 'eye') {
+            // 3D foreshortened protruding glossy eye dome!
+            const facing = clamp(item.nz, 0.28, 1);
+            const rX = item.r * (0.48 + 0.52 * facing);
+            const rY = item.r;
+            const tilt = Math.atan2(item.ny, item.nx) * (1 - facing) * 0.25;
+
+            ctx.save();
+            ctx.translate(item.x, item.y);
+            ctx.rotate(tilt);
+
+            // Subtle orbital shadow
+            ctx.fillStyle = 'rgba(32, 16, 10, 0.24)';
+            ctx.beginPath();
+            ctx.ellipse(0, 0.4, rX * 1.18, rY * 1.16, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Golden-silver spherical iris
+            const ig = ctx.createRadialGradient(-rX * 0.22, -rY * 0.28, rY * 0.1, 0, 0, rY);
+            ig.addColorStop(0, '#fffce6');
+            ig.addColorStop(0.52, '#e8c468');
+            ig.addColorStop(0.85, '#966d28');
+            ig.addColorStop(1, '#462c0c');
+            ctx.fillStyle = ig;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, rX, rY, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Deep glossy black pupil shifted naturally along eye normal
+            ctx.fillStyle = '#0a0c12';
+            ctx.beginPath();
+            ctx.ellipse(item.nx * rX * 0.18, item.ny * rY * 0.12, rX * 0.58, rY * 0.58, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Crisp wet cornea highlight
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+            ctx.beginPath();
+            ctx.ellipse(-rX * 0.22, -rY * 0.28, rX * 0.30, rY * 0.22, -0.4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        ctx.restore();
+      }
+
+      function drawBowlContents() {
+        ctx.save();
+        traceWaterClipPath();
+        ctx.clip();
+
+        // Subtle underwater cast shadows from the 3 goldfish onto the pebble bed
+        for (const f of fishes) {
+          const distToBottom = clamp((BOWL.baseY - 20) - f.y, 10, 220);
+          const shadowAlpha = clamp(0.24 * (1 - distToBottom / 240), 0.03, 0.22);
+          const spread = 1 + distToBottom * 0.004;
+          const sx = f.x + distToBottom * 0.14;
+          const sy = BOWL.baseY - 18 + f.z * 0.08;
+          ctx.save();
+          ctx.fillStyle = `rgba(14, 34, 44, ${shadowAlpha})`;
+          ctx.beginPath();
+          ctx.ellipse(sx, sy, f.length * 0.42 * spread, 7 * spread, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Depth-sort underwater objects: plants, fishes, bubbles
+        const items = [];
+        for (const pl of plants) items.push({ z: pl.z, kind: 'plant', obj: pl });
+        for (const f of fishes) items.push({ z: f.z, kind: 'fish', obj: f });
+        for (const b of bubbles) items.push({ z: b.z, kind: 'bubble', obj: b });
+        items.sort((a, b) => a.z - b.z);
+
+        for (const item of items) {
+          if (item.kind === 'plant') {
+            drawPlant(item.obj);
+          } else if (item.kind === 'fish') {
+            drawGoldfish(item.obj);
+          } else {
+            const b = item.obj;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+            ctx.fillStyle = 'rgba(225, 248, 255, 0.28)';
+            ctx.lineWidth = 1.1;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.beginPath();
+            ctx.arc(b.x - b.r * 0.32, b.y - b.r * 0.32, b.r * 0.28, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+        ctx.restore();
+
+        // Draw floating/falling fish food flakes
+        for (const fd of foods) {
+          ctx.save();
+          ctx.fillStyle = '#d48b44';
+          ctx.strokeStyle = '#9a5b24';
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.ellipse(fd.x, fd.y, fd.r, fd.r * 0.72, 0.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      function drawBowlFrontGlass(theme) {
+        const { cx, cy, r, waterY, rimY, rimRx, baseY } = BOWL;
+        const surfRx = bowlSliceRadius(waterY) - 3;
+
+        ctx.save();
+
+        // Animated surface ripples on water meniscus
+        for (const rp of surfaceRipples) {
+          ctx.strokeStyle = `rgba(255, 255, 255, ${rp.alpha})`;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.ellipse(rp.x, waterY + 1, rp.r, rp.r * 0.2, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Front water surface shimmer line
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.62)';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.ellipse(cx, waterY, surfRx, 17, 0, 0.06, Math.PI - 0.06);
+        ctx.stroke();
+
+        // Subtle glass Fresnel rim glow around spherical wall
+        traceBowlPath();
+        const fresnel = ctx.createRadialGradient(cx, cy, r * 0.74, cx, cy, r + 4);
+        fresnel.addColorStop(0, 'rgba(255, 255, 255, 0)');
+        fresnel.addColorStop(0.84, 'rgba(210, 242, 255, 0.08)');
+        fresnel.addColorStop(0.96, 'rgba(255, 255, 255, 0.28)');
+        fresnel.addColorStop(1, 'rgba(255, 255, 255, 0.45)');
+        ctx.fillStyle = fresnel;
+        ctx.fill();
+
+        // Crisp curved glass outline
+        traceBowlPath();
+        ctx.strokeStyle = theme.glassRim;
+        ctx.lineWidth = 2.6;
+        ctx.stroke();
+
+        // Thick glossy flared top rim (front half)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.86)';
+        ctx.lineWidth = 3.2;
+        ctx.beginPath();
+        ctx.ellipse(cx, rimY, rimRx, 14, 0, 0, Math.PI);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(180, 224, 240, 0.45)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.ellipse(cx, rimY + 3, rimRx - 3, 13, 0, 0.1, Math.PI - 0.1);
+        ctx.stroke();
+
+        // Curved specular window reflection on the left shoulder of the bowl
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.44)';
+        ctx.beginPath();
+        ctx.moveTo(cx - 118, cy - 68);
+        ctx.quadraticCurveTo(cx - 152, cy - 10, cx - 132, cy + 56);
+        ctx.quadraticCurveTo(cx - 120, cy + 58, cx - 114, cy + 44);
+        ctx.quadraticCurveTo(cx - 129, cy - 8, cx - 100, cy - 58);
+        ctx.closePath();
+        ctx.fill();
+
+        // Secondary sharp highlight glint above left shoulder
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+        ctx.beginPath();
+        ctx.ellipse(cx - 96, cy - 94, 14, 6, -0.78, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Subtle curved reflection on the right edge (catching kitten's side)
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+        ctx.beginPath();
+        ctx.moveTo(cx + 128, cy - 42);
+        ctx.quadraticCurveTo(cx + 148, cy + 8, cx + 130, cy + 62);
+        ctx.quadraticCurveTo(cx + 122, cy + 60, cx + 120, cy + 50);
+        ctx.quadraticCurveTo(cx + 134, cy + 8, cx + 118, cy - 36);
+        ctx.closePath();
+        ctx.fill();
+
+        // Thick glass base refraction arc
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.ellipse(cx, baseY - 2, 76, 10, 0, 0.12, Math.PI - 0.12);
+        ctx.stroke();
+        ctx.restore();
+
+        // Glass tap ripple rings (when kitten paws or user taps)
+        for (const gt of glassTaps) {
+          ctx.save();
+          ctx.strokeStyle = `rgba(255, 255, 255, ${gt.alpha})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(gt.x, gt.y, gt.r, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.strokeStyle = `rgba(210, 245, 255, ${gt.alpha * 0.6})`;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.arc(gt.x, gt.y, gt.r * 0.58, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        ctx.restore();
+      }
+
+      // Draw the adorable Black Kitten sitting beside the goldfish bowl
+      function drawBlackKitten(theme) {
+        const breathe = Math.sin(elapsed * 2.5);
+        const crouchOffset = kitten.crouch * 16;
+        const leanX = -kitten.crouch * 14;
+
+        // Core body anchor
+        const bx = kitten.baseX;
+        const by = kitten.baseY;
+
+        // Head position shifts subtly forward & down when stalking/pawing
+        const hx = 648 + leanX;
+        const hy = 344 + crouchOffset + breathe * 1.6;
+        kitten.headX = hx;
+        kitten.headY = hy;
+
+        ctx.save();
+
+        // --- 1. Expressive Curling Tail (behind body, whipping playfully at tip) ---
+        const tailBaseX = bx + 66;
+        const tailBaseY = by - 16;
+        const flick1 = Math.sin(kitten.tailPhase) * (10 + kitten.tailExcitement * 18);
+        const flick2 = Math.sin(kitten.tailPhase - 1.05) * (16 + kitten.tailExcitement * 28);
+
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        // Subtle rim highlight along tail
+        ctx.strokeStyle = theme.catRim;
+        ctx.lineWidth = 19;
+        ctx.beginPath();
+        ctx.moveTo(tailBaseX, tailBaseY);
+        ctx.bezierCurveTo(
+          tailBaseX + 58, tailBaseY + 12 + flick1 * 0.25,
+          tailBaseX + 104, tailBaseY - 26 + flick1 * 0.65,
+          tailBaseX + 90 + flick2 * 0.45, tailBaseY - 94 + flick2 * 0.28
+        );
+        ctx.stroke();
+
+        // Velvet black tail core
+        ctx.strokeStyle = theme.catFur;
+        ctx.lineWidth = 16;
+        ctx.beginPath();
+        ctx.moveTo(tailBaseX, tailBaseY);
+        ctx.bezierCurveTo(
+          tailBaseX + 58, tailBaseY + 12 + flick1 * 0.25,
+          tailBaseX + 104, tailBaseY - 26 + flick1 * 0.65,
+          tailBaseX + 90 + flick2 * 0.45, tailBaseY - 94 + flick2 * 0.28
+        );
+        ctx.stroke();
+        ctx.restore();
+
+        // --- 2. Back / Far Front Paw (resting neatly on table) ---
+        ctx.save();
+        ctx.fillStyle = '#0e0f16';
+        ctx.beginPath();
+        ctx.ellipse(bx - 56, by - 5, 19, 10, -0.05, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // --- 3. Kitten Sitting Body & Cute Rounded Haunches ---
+        ctx.save();
+        const bodyGrad = ctx.createRadialGradient(bx - 16, by - 88, 12, bx + 16, by - 46, 125);
+        bodyGrad.addColorStop(0, theme.catFurMid);
+        bodyGrad.addColorStop(0.6, theme.catFur);
+        bodyGrad.addColorStop(1, '#0b0c12');
+
+        ctx.fillStyle = bodyGrad;
+        ctx.beginPath();
+        // Start at chest below neck
+        ctx.moveTo(hx - 14, hy + 28);
+        // Chest curve down to front legs
+        ctx.quadraticCurveTo(bx - 62 + leanX * 0.5, by - 64, bx - 48, by - 4);
+        // Bottom sitting contour along wooden table
+        ctx.quadraticCurveTo(bx + 12, by + 6, bx + 68, by - 6);
+        // Cute fluffy sitting haunch curving up the back
+        ctx.bezierCurveTo(
+          bx + 88, by - 42,
+          bx + 70, by - 108 + crouchOffset * 0.5,
+          hx + 24, hy + 18
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        // Soft rim light along kitten's curved back & shoulder
+        ctx.strokeStyle = theme.catRim;
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(hx - 16, hy + 28);
+        ctx.quadraticCurveTo(bx - 58 + leanX * 0.5, by - 64, bx - 48, by - 12);
+        ctx.stroke();
+
+        // Soft tucked hind paw silhouette on haunch
+        ctx.fillStyle = '#1d202e';
+        ctx.beginPath();
+        ctx.ellipse(bx + 28, by - 8, 26, 12, -0.08, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = theme.catFur;
+        ctx.beginPath();
+        ctx.ellipse(bx + 28, by - 6, 24, 10, -0.08, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // --- 4. Red Japanese Collar & Little Golden Bell (赤い首輪と鈴) ---
+        ctx.save();
+        const neckX = hx + 2;
+        const neckY = hy + 34;
+        ctx.strokeStyle = '#c82b2b';
+        ctx.lineWidth = 7.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(neckX - 24, neckY - 3);
+        ctx.quadraticCurveTo(neckX - 4, neckY + 12, neckX + 24, neckY + 2);
+        ctx.stroke();
+
+        // Subtle gold highlight thread on collar
+        ctx.strokeStyle = 'rgba(255, 212, 148, 0.5)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(neckX - 20, neckY - 2);
+        ctx.quadraticCurveTo(neckX - 4, neckY + 10, neckX + 20, neckY + 1);
+        ctx.stroke();
+
+        // Swinging tiny golden bell
+        const bellX = neckX - 16 + Math.sin(kitten.bellSwing) * 4;
+        const bellY = neckY + 12 + Math.abs(Math.sin(kitten.bellSwing)) * 1.2;
+        const bellGrad = ctx.createRadialGradient(bellX - 2, bellY - 2, 1, bellX, bellY, 7.5);
+        bellGrad.addColorStop(0, '#fff2a6');
+        bellGrad.addColorStop(0.55, '#f0b83a');
+        bellGrad.addColorStop(1, '#a66d12');
+        ctx.fillStyle = bellGrad;
+        ctx.beginPath();
+        ctx.arc(bellX, bellY, 6.8, 0, Math.PI * 2);
+        ctx.fill();
+        // Bell slit
+        ctx.strokeStyle = '#5c3b08';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(bellX - 4, bellY + 2);
+        ctx.lineTo(bellX + 3.5, bellY + 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // --- 5. Kitten Head, Expressive Ears, Huge Amber Eyes & Whiskers ---
+        ctx.save();
+        ctx.translate(hx, hy);
+        ctx.rotate(kitten.headTilt);
+
+        // Far Ear (Left ear, closer to bowl)
+        const earRotL = -0.22 - kitten.crouch * 0.14 - kitten.earTwitchL * 0.24;
+        ctx.save();
+        ctx.translate(-24, -26);
+        ctx.rotate(earRotL);
+        ctx.fillStyle = theme.catFur;
+        ctx.beginPath();
+        ctx.moveTo(-14, 10);
+        ctx.quadraticCurveTo(-18, -26, -2, -36);
+        ctx.quadraticCurveTo(12, -20, 14, 8);
+        ctx.closePath();
+        ctx.fill();
+        // Soft inner ear
+        ctx.fillStyle = '#563c48';
+        ctx.beginPath();
+        ctx.moveTo(-8, 4);
+        ctx.quadraticCurveTo(-10, -18, -2, -26);
+        ctx.quadraticCurveTo(6, -14, 7, 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        // Near Ear (Right ear)
+        const earRotR = 0.26 + kitten.crouch * 0.08 + kitten.earTwitchR * 0.26;
+        ctx.save();
+        ctx.translate(22, -26);
+        ctx.rotate(earRotR);
+        ctx.fillStyle = theme.catFur;
+        ctx.beginPath();
+        ctx.moveTo(-14, 8);
+        ctx.quadraticCurveTo(-6, -24, 6, -37);
+        ctx.quadraticCurveTo(20, -18, 16, 12);
+        ctx.closePath();
+        ctx.fill();
+        // Inner ear
+        ctx.fillStyle = '#624351';
+        ctx.beginPath();
+        ctx.moveTo(-8, 5);
+        ctx.quadraticCurveTo(-2, -16, 5, -26);
+        ctx.quadraticCurveTo(12, -13, 9, 6);
+        ctx.closePath();
+        ctx.fill();
+        // Rim light on ear edge
+        ctx.strokeStyle = theme.catRim;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(-11, -12);
+        ctx.quadraticCurveTo(-2, -28, 6, -37);
+        ctx.stroke();
+        ctx.restore();
+
+        // Round fluffy kitten head silhouette (with subtle cute cheek fluff)
+        const headGrad = ctx.createRadialGradient(-16, -12, 6, 4, 2, 54);
+        headGrad.addColorStop(0, theme.catFurMid);
+        headGrad.addColorStop(0.68, theme.catFur);
+        headGrad.addColorStop(1, '#0b0c12');
+        ctx.fillStyle = headGrad;
+        ctx.beginPath();
+        ctx.moveTo(0, -40);
+        ctx.bezierCurveTo(32, -40, 48, -18, 46, 6);
+        ctx.bezierCurveTo(45, 28, 24, 41, -4, 40);
+        ctx.bezierCurveTo(-32, 39, -46, 26, -45, 6);
+        ctx.bezierCurveTo(-45, -20, -28, -40, 0, -40);
+        ctx.closePath();
+        ctx.fill();
+
+        // Delicate rim highlight on forehead/cheek facing the bright bowl
+        ctx.strokeStyle = theme.catRim;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.arc(-2, 0, 42, Math.PI * 0.78, Math.PI * 1.38);
+        ctx.stroke();
+
+        // Big Luminous Golden-Amber Kitten Eyes tracking the goldfish!
+        const dxLook = kitten.lookX - hx;
+        const dyLook = kitten.lookY - hy;
+        const lookDist = Math.hypot(dxLook, dyLook) || 1;
+        const gazeX = clamp((dxLook / lookDist) * 4.4, -4.4, 4.4);
+        const gazeY = clamp((dyLook / lookDist) * 3.8, -3.6, 3.6);
+        const blinkScaleY = Math.max(0.06, 1 - Math.sin(kitten.blinkProgress));
+
+        function drawKittenEye(ex, ey, rx, ry) {
+          ctx.save();
+          ctx.translate(ex, ey);
+          ctx.scale(1, blinkScaleY);
+
+          // Luminous amber-gold iris gradient
+          const irisGrad = ctx.createRadialGradient(0, 2, 2, 0, 0, ry * 1.15);
+          irisGrad.addColorStop(0, '#fff4a8');
+          irisGrad.addColorStop(0.42, '#f6be32');
+          irisGrad.addColorStop(0.84, '#d97e12');
+          irisGrad.addColorStop(1, '#7c3f05');
+
+          ctx.fillStyle = irisGrad;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Clip iris for glossy pupil
+          ctx.save();
+          ctx.beginPath();
+          ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+          ctx.clip();
+
+          // Big cute kitten pupil (round-oval, dilates when stalking!)
+          const pupilRx = rx * kitten.pupilDilation;
+          const pupilRy = ry * clamp(kitten.pupilDilation + 0.14, 0.62, 0.88);
+          ctx.fillStyle = '#090a0f';
+          ctx.beginPath();
+          ctx.ellipse(gazeX, gazeY, pupilRx, pupilRy, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Twin sparkling catchlights
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+          ctx.beginPath();
+          ctx.ellipse(gazeX - rx * 0.28, gazeY - ry * 0.34, rx * 0.26, ry * 0.22, -0.35, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+          ctx.beginPath();
+          ctx.arc(gazeX + rx * 0.28, gazeY + ry * 0.28, rx * 0.11, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.restore();
+
+          // Crisp dark upper eyelid rim
+          ctx.strokeStyle = '#07080d';
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, rx, ry, 0, Math.PI, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.restore();
+        }
+
+        // 3/4 left-facing eye placement
+        drawKittenEye(-25, 1, 9.6, 12.2);
+        drawKittenEye(5, 3, 11.4, 12.8);
+
+        // Tiny cute nose & ω mouth
+        ctx.fillStyle = '#3b2c34';
+        ctx.beginPath();
+        ctx.moveTo(-15, 15);
+        ctx.lineTo(-9, 15);
+        ctx.lineTo(-12, 19.5);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(130, 124, 146, 0.65)';
+        ctx.lineWidth = 1.4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-12, 19.5);
+        ctx.quadraticCurveTo(-16, 25, -21, 22);
+        ctx.moveTo(-12, 19.5);
+        ctx.quadraticCurveTo(-7, 25, -2, 22);
+        ctx.stroke();
+
+        // Delicate whiskers
+        ctx.strokeStyle = theme.id === 'night' ? 'rgba(210, 225, 255, 0.38)' : 'rgba(235, 240, 250, 0.56)';
+        ctx.lineWidth = 1.15;
+        // Left whiskers (towards bowl)
+        ctx.beginPath();
+        ctx.moveTo(-30, 15); ctx.quadraticCurveTo(-48, 12, -62, 14);
+        ctx.moveTo(-30, 19); ctx.quadraticCurveTo(-49, 20, -64, 24);
+        ctx.moveTo(-28, 23); ctx.quadraticCurveTo(-44, 27, -56, 32);
+        // Right whiskers
+        ctx.moveTo(14, 17); ctx.quadraticCurveTo(36, 14, 54, 16);
+        ctx.moveTo(15, 21); ctx.quadraticCurveTo(38, 22, 56, 26);
+        ctx.moveTo(13, 25); ctx.quadraticCurveTo(32, 29, 48, 35);
+        ctx.stroke();
+
+        ctx.restore(); // end head transform
+
+        // --- 6. Animated Near Front Paw (resting OR playfully pawing the glass bowl!) ---
+        const shoulderX = bx - 38 + leanX * 0.7;
+        const shoulderY = by - 88 + crouchOffset * 0.6;
+        const restPawX = bx - 32;
+        const restPawY = by - 2;
+
+        // Target glass point on right wall of the goldfish bowl
+        const targetGlassY = kitten.pawTargetY;
+        const targetGlassX = BOWL.cx + bowlSliceRadius(targetGlassY) + 5;
+
+        const p = kitten.pawProgress;
+        // Lift in a cute playful arc
+        const pawX = lerp(restPawX, targetGlassX, p);
+        const pawY = lerp(restPawY, targetGlassY, p) - Math.sin(p * Math.PI) * 28;
+
+        ctx.save();
+        // Arm from shoulder to paw
+        const elbowX = lerp(shoulderX, pawX, 0.45) + (1 - p) * 6;
+        const elbowY = lerp(shoulderY, pawY, 0.55) + 18 * (1 - p * 0.5);
+
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = theme.catFur;
+        ctx.lineWidth = 20;
+        ctx.beginPath();
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.quadraticCurveTo(elbowX, elbowY, pawX, pawY);
+        ctx.stroke();
+
+        // Soft directional rim highlight on the bowl-facing edge of the arm
+        ctx.strokeStyle = theme.catRim;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(shoulderX - 9, shoulderY + 2);
+        ctx.quadraticCurveTo(elbowX - 9, elbowY, pawX - 9, pawY - 2);
+        ctx.stroke();
+
+        // Cute rounded mitten paw
+        ctx.translate(pawX, pawY);
+        ctx.rotate(lerp(0, 0.95, p));
+        ctx.fillStyle = theme.catFur;
+        ctx.beginPath();
+        ctx.ellipse(-4, 0, 16, 11.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Show adorable tiny pink paw pads (肉球) when paw is raised toward the glass!
+        if (p > 0.25) {
+          const padAlpha = clamp((p - 0.25) / 0.5, 0, 0.92);
+          ctx.fillStyle = `rgba(218, 128, 148, ${padAlpha})`;
+          // Main pad
+          ctx.beginPath();
+          ctx.ellipse(-4, 2, 4.8, 3.6, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // Tiny toe beans
+          const beans = [[-10, -2.5], [-6.5, -5.2], [-1.5, -5.2], [2, -2.2]];
+          for (const [bx2, by2] of beans) {
+            ctx.beginPath();
+            ctx.arc(bx2, by2, 2.0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+
+        ctx.restore(); // end kitten
+      }
+
+      function render() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const theme = THEMES[themeIdx];
+
+        drawBackground(theme, w, h);
+
+        ctx.save();
+        ctx.translate(viewOffX, viewOffY);
+        ctx.scale(viewScale, viewScale);
+
+        drawTableShadowsAndCaustics(theme);
+        drawBowlBack(theme);
+        drawPebbles();
+        drawBowlContents();
+        drawBowlFrontGlass(theme);
+        drawBlackKitten(theme);
+
+        ctx.restore();
+      }
+
+      function loop(now) {
+        const dt = Math.min((now - lastTime) / 1000, 0.05);
+        lastTime = now;
+        update(dt);
+        render();
+        requestAnimationFrame(loop);
+      }
+
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>
