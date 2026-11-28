@@ -4,7 +4,8 @@
 
 ## ライブデモ (GitHub Pages)
 
-https://masawo2024.github.io/goldfish-and-kitten/
+- メイン版（金魚鉢と黒猫の子猫）: https://masawo2024.github.io/goldfish-and-kitten/
+- 別バージョン（`goldfish_kitten.html` / 金魚鉢と黒い子猫）: https://masawo2024.github.io/goldfish-and-kitten/goldfish_kitten.html
 
 ## 特徴
 
@@ -25,6 +26,7 @@ https://masawo2024.github.io/goldfish-and-kitten/
 
 - `index.html` — GitHub Pages 公開用エントリーポイント
 - `goldfish_and_kitten.html` — 単体 HTML アニメーション本体（外部ライブラリ不要）
+- `goldfish_kitten.html` — 別バージョン（金魚鉢と黒い子猫）
 - `README.md` — このドキュメント
 
 ## ローカルでの実行方法
