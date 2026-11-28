@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>金魚鉢と黒猫</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: #f6e6cd;
+  }
+  .scene { width: 100vw; height: 100vh; }
+  svg { display: block; width: 100%; height: 100%; }
+
+  /* 縦長の画面では全体が収まるように下寄せ */
+  @media (orientation: portrait) {
+    body { place-items: end center; background: #fbf2e3; }
+    .scene { height: auto; }
+    svg { height: auto; }
+  }
+
+  /* ---------- 金魚（canvasに3D描画） ---------- */
+  #fishCanvas { display: block; }
+
+  /* ---------- 水面 ---------- */
+  .wave-move { animation: waveShift 6s linear infinite; }
+  @keyframes waveShift { to { transform: translateX(-80px); } }
+
+  /* ---------- 泡 ---------- */
+  .bubble {
+    opacity: 0;
+    animation: rise var(--d, 6s) linear infinite;
+    animation-delay: var(--delay, 0s);
+  }
+  @keyframes rise {
+    0%   { transform: translate(0, 0);       opacity: 0; }
+    10%  { opacity: .85; }
+    55%  { transform: translate(7px, -78px); }
+    85%  { opacity: .35; }
+    100% { transform: translate(-3px, -158px); opacity: 0; }
+  }
+
+  /* ---------- 黒猫 ---------- */
+  .cat-head {
+    transform-box: view-box;
+    transform-origin: 642px 388px;
+    animation: headBob 6.4s ease-in-out infinite;
+  }
+  @keyframes headBob {
+    0%, 100% { transform: rotate(-1.2deg); }
+    50%      { transform: rotate(1.2deg); }
+  }
+
+  .cat-eyes {
+    transform-box: view-box;
+    transform-origin: 640px 345px;
+    animation: blink 6.6s infinite;
+  }
+  @keyframes blink {
+    0%, 86%, 100% { transform: scaleY(1); }
+    89%           { transform: scaleY(.05); }
+    92%           { transform: scaleY(1); }
+  }
+
+  .cat-pupils { will-change: transform; }
+
+  .cat-tail {
+    transform-box: view-box;
+    transform-origin: 698px 498px;
+    animation: tailWag 3.6s ease-in-out infinite;
+  }
+  @keyframes tailWag {
+    0%, 100% { transform: rotate(-6deg); }
+    50%      { transform: rotate(7deg); }
+  }
+
+  .mote {
+    animation: moteFloat var(--md, 9s) ease-in-out infinite alternate;
+  }
+  @keyframes moteFloat {
+    from { transform: translate(0, 0); }
+    to   { transform: translate(16px, -24px); }
+  }
+
+  .cat-ear-r {
+    transform-box: view-box;
+    transform-origin: 672px 302px;
+    animation: earTwitch 7s ease-in-out infinite;
+  }
+  @keyframes earTwitch {
+    0%, 70%, 100% { transform: rotate(0deg); }
+    74%           { transform: rotate(-8deg); }
+    78%           { transform: rotate(2deg); }
+    82%           { transform: rotate(0deg); }
+  }
+
+  /* ---------- 猫のちょっかい ---------- */
+  .cat {
+    transform-box: view-box;
+    transform-origin: 662px 512px;
+  }
+  .cat.tease { animation: catLean 1.7s ease-in-out; }
+  @keyframes catLean {
+    0%   { transform: translate(0, 0) rotate(0deg); }
+    13%  { transform: translate(-20px, 4px) rotate(-5.6deg); }
+    24%  { transform: translate(-30px, 6px) rotate(-8deg); }
+    33%  { transform: translate(-30px, 6px) rotate(-7.9deg); }
+    43%  { transform: translate(-14px, 3px) rotate(-3.4deg); }
+    52%  { transform: translate(-30px, 6px) rotate(-8.1deg); }
+    61%  { transform: translate(-30px, 6px) rotate(-7.9deg); }
+    72%  { transform: translate(-16px, 4px) rotate(-3.8deg); }
+    86%  { transform: translate(-6px, 1px) rotate(-1.4deg); }
+    100% { transform: translate(0, 0) rotate(0deg); }
+  }
+
+  .cat-reach {
+    opacity: 0;
+    transform: translate(46px, 24px);
+  }
+  /* 伸ばすときは左前足を持ち上げる（3本目に見えないように） */
+  .cat.tease .cat-leg-l { animation: legLift 1.7s ease-in-out; }
+  @keyframes legLift {
+    0%   { opacity: 1; }
+    6%   { opacity: 0; }
+    92%  { opacity: 0; }
+    100% { opacity: 1; }
+  }
+  .cat.tease .cat-reach { animation: catReach 1.7s ease-in-out; }
+  @keyframes catReach {
+    0%   { opacity: 0; transform: translate(46px, 24px); }
+    7%   { opacity: 1; transform: translate(36px, 19px); }
+    26%  { opacity: 1; transform: translate(0, 0); }
+    34%  { opacity: 1; transform: translate(-3px, -1px); }
+    44%  { opacity: 1; transform: translate(24px, 6px); }
+    54%  { opacity: 1; transform: translate(0, 0); }
+    62%  { opacity: 1; transform: translate(-3px, -1px); }
+    74%  { opacity: 1; transform: translate(28px, 7px); }
+    88%  { opacity: 1; transform: translate(36px, 9px); }
+    96%  { opacity: 0; transform: translate(42px, 22px); }
+    100% { opacity: 0; transform: translate(46px, 24px); }
+  }
+
+  /* ガラスに触れたときの波紋 */
+  .tap {
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+  }
+  body.teasing .tap { animation: tapPulse 1.7s ease-out; }
+  @keyframes tapPulse {
+    0%, 18% { opacity: 0;   transform: scale(.35); }
+    27%     { opacity: .85; transform: scale(.9); }
+    44%     { opacity: 0;   transform: scale(1.9); }
+    52%     { opacity: .7;  transform: scale(.75); }
+    68%     { opacity: 0;   transform: scale(1.7); }
+    100%    { opacity: 0;   transform: scale(.35); }
+  }
+
+  .tap-glow { transform-box: fill-box; transform-origin: 50% 50%; }
+  body.teasing .tap-glow { animation: tapGlow 1.7s ease-out; }
+  @keyframes tapGlow {
+    0%, 20%  { opacity: 0;   transform: scale(.5); }
+    26%      { opacity: .55; transform: scale(1); }
+    38%      { opacity: 0;   transform: scale(1.35); }
+    52%      { opacity: .5;  transform: scale(.8); }
+    64%      { opacity: 0;   transform: scale(1.3); }
+    100%     { opacity: 0;   transform: scale(.5); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="scene">
+<svg viewBox="0 0 900 620" preserveAspectRatio="xMidYMid slice" role="img" aria-label="透明な金魚鉢で泳ぐ3匹の金魚を、黒猫の子猫がじっと見つめているアニメーション">
+  <defs>
+    <linearGradient id="wallGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbf2e3"/>
+      <stop offset=".6" stop-color="#f3e1c6"/>
+      <stop offset="1" stop-color="#e6cdad"/>
+    </linearGradient>
+    <radialGradient id="wallGlow" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#fffaf0" stop-opacity=".95"/>
+      <stop offset=".55" stop-color="#fff4de" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#fff4de" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="woodGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c9925f"/>
+      <stop offset=".08" stop-color="#b47a49"/>
+      <stop offset=".55" stop-color="#9c6539"/>
+      <stop offset="1" stop-color="#7d4e2b"/>
+    </linearGradient>
+    <linearGradient id="glassEdge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".45" stop-color="#cfeefb"/>
+      <stop offset="1" stop-color="#9fd4e8"/>
+    </linearGradient>
+    <radialGradient id="glassTint" cx=".5" cy=".5" r=".5">
+      <stop offset=".55" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset=".86" stop-color="#e4f6ff" stop-opacity=".16"/>
+      <stop offset=".97" stop-color="#ffffff" stop-opacity=".4"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".6"/>
+    </radialGradient>
+    <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b5ecf5" stop-opacity=".62"/>
+      <stop offset=".45" stop-color="#63c6de" stop-opacity=".62"/>
+      <stop offset="1" stop-color="#2b8fb4" stop-opacity=".8"/>
+    </linearGradient>
+    <linearGradient id="rimGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#cfeeff" stop-opacity=".45"/>
+    </linearGradient>
+    <linearGradient id="catGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2a38"/>
+      <stop offset=".55" stop-color="#17171f"/>
+      <stop offset="1" stop-color="#0c0c12"/>
+    </linearGradient>
+    <linearGradient id="catGradU" x1="0" y1="338" x2="0" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2a2a38"/>
+      <stop offset=".55" stop-color="#17171f"/>
+      <stop offset="1" stop-color="#0c0c12"/>
+    </linearGradient>
+    <radialGradient id="jijiEye" cx=".45" cy=".4" r=".7">
+      <stop offset="0" stop-color="#fffdf2"/>
+      <stop offset=".6" stop-color="#f3ecc9"/>
+      <stop offset="1" stop-color="#d9d09a"/>
+    </radialGradient>
+    <linearGradient id="legFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e1e28" stop-opacity="0"/>
+      <stop offset=".45" stop-color="#1e1e28" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#1e1e28" stop-opacity=".45"/>
+    </linearGradient>
+    <radialGradient id="vignette" cx=".5" cy=".48" r=".75">
+      <stop offset=".55" stop-color="#3c2814" stop-opacity="0"/>
+      <stop offset="1" stop-color="#3c2814" stop-opacity=".28"/>
+    </radialGradient>
+
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <filter id="softSm" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2.2"/>
+    </filter>
+
+    <clipPath id="bowlClip">
+      <circle cx="320" cy="352" r="159"/>
+    </clipPath>
+  </defs>
+
+  <!-- 壁 -->
+  <rect width="900" height="620" fill="url(#wallGrad)"/>
+  <ellipse cx="320" cy="335" rx="310" ry="280" fill="url(#wallGlow)"/>
+
+  <!-- 空気中のほこり -->
+  <g fill="#fff8ea" opacity=".5">
+    <circle class="mote" cx="118" cy="196" r="2.6" style="--md:11s"/>
+    <circle class="mote" cx="768" cy="164" r="2.2" style="--md:9s; animation-delay:-3s"/>
+    <circle class="mote" cx="196" cy="424" r="2" style="--md:13s; animation-delay:-6s"/>
+    <circle class="mote" cx="836" cy="330" r="2.8" style="--md:10s; animation-delay:-4s"/>
+  </g>
+
+  <!-- テーブル -->
+  <rect x="0" y="512" width="900" height="108" fill="url(#woodGrad)"/>
+  <rect x="0" y="512" width="900" height="4" fill="#d9a273" opacity=".75"/>
+  <path d="M 0,560 C 150,556 300,566 460,560 C 620,554 780,564 900,558" stroke="#7a4a27" stroke-opacity=".35" stroke-width="2" fill="none"/>
+  <path d="M 0,592 C 180,588 340,596 520,590 C 700,584 820,592 900,588" stroke="#7a4a27" stroke-opacity=".25" stroke-width="2" fill="none"/>
+  <ellipse cx="320" cy="520" rx="245" ry="34" fill="#ffe9c6" opacity=".22" filter="url(#soft)"/>
+  <ellipse cx="320" cy="548" rx="108" ry="14" fill="#bfe4f0" opacity=".16" filter="url(#soft)"/>
+
+  <!-- ============ 金魚鉢 ============ -->
+  <g>
+    <ellipse cx="320" cy="514" rx="140" ry="15" fill="#6d4726" opacity=".28" filter="url(#soft)"/>
+
+    <g clip-path="url(#bowlClip)">
+      <!-- 水 -->
+      <g class="wave-move">
+        <path d="M 40,292 C 60,282 80,282 100,292 S 140,302 160,292 S 200,282 220,292 S 260,302 280,292 S 320,282 340,292 S 380,302 400,292 S 440,282 460,292 S 500,302 520,292 S 560,282 580,292 S 620,302 640,292 L 640,540 L 40,540 Z" fill="url(#waterGrad)"/>
+        <path d="M 40,292 C 60,282 80,282 100,292 S 140,302 160,292 S 200,282 220,292 S 260,302 280,292 S 320,282 340,292 S 380,302 400,292 S 440,282 460,292 S 500,302 520,292 S 560,282 580,292 S 620,302 640,292" fill="none" stroke="#ecfdff" stroke-opacity=".55" stroke-width="2"/>
+      </g>
+    </g>
+
+    <!-- 金魚（3Dポリゴンで描画） -->
+    <foreignObject x="155" y="185" width="340" height="340">
+      <div xmlns="http://www.w3.org/1999/xhtml" style="width:340px;height:340px">
+        <canvas id="fishCanvas" width="340" height="340" style="width:340px;height:340px"></canvas>
+      </div>
+    </foreignObject>
+
+    <g clip-path="url(#bowlClip)">
+      <!-- 泡 -->
+      <g fill="#eaffff" stroke="#ffffff" stroke-opacity=".5" stroke-width=".8">
+        <circle class="bubble" cx="300" cy="455" r="4"   style="--d:6.5s; --delay:-1s"/>
+        <circle class="bubble" cx="318" cy="472" r="3"   style="--d:5.5s; --delay:-3s"/>
+        <circle class="bubble" cx="338" cy="446" r="5"   style="--d:7.5s; --delay:-4.5s"/>
+        <circle class="bubble" cx="292" cy="434" r="2.5" style="--d:5s;   --delay:-2s"/>
+        <circle class="bubble" cx="352" cy="464" r="3.5" style="--d:6s;   --delay:-5s"/>
+        <circle class="bubble" cx="326" cy="432" r="2"   style="--d:4.8s; --delay:-.5s"/>
+      </g>
+    </g>
+
+    <!-- ガラス前面 -->
+    <circle cx="320" cy="352" r="159" fill="url(#glassTint)"/>
+    <ellipse cx="243" cy="300" rx="30" ry="64" transform="rotate(-20 243 300)" fill="#ffffff" opacity=".3" filter="url(#soft)"/>
+    <ellipse cx="235" cy="264" rx="7" ry="17" transform="rotate(-20 235 264)" fill="#ffffff" opacity=".75" filter="url(#softSm)"/>
+    <path d="M 452,404 A 150,150 0 0 1 398,482" fill="none" stroke="#ffffff" stroke-opacity=".3" stroke-width="5" stroke-linecap="round" filter="url(#softSm)"/>
+    <circle cx="320" cy="352" r="159" fill="none" stroke="url(#glassEdge)" stroke-width="3" opacity=".85"/>
+
+    <!-- 縁 -->
+    <ellipse cx="320" cy="199" rx="56" ry="15" fill="url(#rimGrad)" opacity=".5"/>
+    <ellipse cx="320" cy="199" rx="56" ry="15" fill="none" stroke="#f2fcff" stroke-width="3.5" opacity=".9"/>
+    <ellipse cx="320" cy="201" rx="45" ry="10" fill="none" stroke="#ffffff" stroke-opacity=".5" stroke-width="1.6"/>
+  </g>
+
+  <!-- 猫がガラスに触れたときの波紋 -->
+  <g class="tap" fill="none" stroke="#ffffff" stroke-linecap="round">
+    <circle class="tap-glow" cx="460" cy="418" r="17" fill="#ffffff" stroke="none" opacity="0" filter="url(#softSm)"/>
+    <ellipse cx="461" cy="418" rx="7" ry="14" transform="rotate(26 461 418)" stroke-width="2.2"/>
+    <ellipse cx="461" cy="418" rx="3.5" ry="7.5" transform="rotate(26 461 418)" stroke-width="1.6" stroke-opacity=".6"/>
+  </g>
+
+  <!-- ============ 黒猫（ジジ風） ============ -->
+  <g transform="translate(-50 0)">
+  <ellipse cx="655" cy="513" rx="92" ry="12" fill="#6d4726" opacity=".32" filter="url(#soft)"/>
+
+  <g class="cat">
+    <!-- しっぽ -->
+    <g class="cat-tail">
+      <path d="M 698,498 C 738,512 784,500 788,472 C 791,448 776,432 764,442" fill="none" stroke="#121219" stroke-width="16" stroke-linecap="round"/>
+    </g>
+
+    <!-- 体 -->
+    <path d="M 604,512 C 594,490 590,462 596,436 C 600,400 606,372 616,356 C 626,340 656,338 670,352 C 686,368 700,402 705,438 C 708,466 706,486 700,512 Z" fill="url(#catGrad)"/>
+
+    <!-- 首 -->
+    <path d="M 618,356 C 612,378 612,398 616,412 L 670,412 C 674,398 674,378 668,356 Z" fill="url(#catGrad)"/>
+
+    <!-- 前足（左前足はちょっかいのとき持ち上がる） -->
+    <g class="cat-leg-l">
+      <path d="M 627,444 L 639,444 L 641,504 L 625,504 Z" fill="url(#legFade)"/>
+      <ellipse cx="632" cy="507" rx="9.5" ry="6.5" fill="#20202b"/>
+      <path d="M 627,507 L 627,512 M 634,506 L 634,512" stroke="#31313f" stroke-width="1.2" stroke-linecap="round"/>
+    </g>
+    <path d="M 649,444 L 661,444 L 663,504 L 647,504 Z" fill="url(#legFade)"/>
+    <ellipse cx="654" cy="507" rx="9.5" ry="6.5" fill="#20202b"/>
+    <path d="M 650,506 L 650,512 M 658,507 L 658,512" stroke="#31313f" stroke-width="1.2" stroke-linecap="round"/>
+
+    <!-- リムライト -->
+    <path d="M 606,500 C 600,476 604,448 616,428" fill="none" stroke="#8e8398" stroke-opacity=".22" stroke-width="3" filter="url(#softSm)"/>
+
+    <!-- ちょっかいを出す前足（左前足が伸びる） -->
+    <g class="cat-reach">
+      <path d="M 636,438 C 616,425 588,408 558,397 C 556,400 554,402 554,405 C 582,421 611,437 630,450 Z" fill="url(#catGradU)"/>
+      <g transform="rotate(29 556 401)">
+        <ellipse cx="556" cy="401" rx="11" ry="13" fill="url(#catGradU)"/>
+        <path d="M 548,393 C 550,400 550,407 548,413" fill="none" stroke="#05050a" stroke-opacity=".36" stroke-width="1.5" stroke-linecap="round"/>
+      </g>
+      <path d="M 633,440 C 614,427 590,410 561,398" fill="none" stroke="#8e8398" stroke-opacity=".26" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M 532,383 C 526,388 523,396 523,404" fill="none" stroke="#8e8398" stroke-opacity=".3" stroke-width="2" stroke-linecap="round"/>
+    </g>
+
+    <!-- 頭 -->
+    <g class="cat-head">
+      <!-- 耳 -->
+      <path d="M 608,308 L 596,270 L 638,298 Z" fill="url(#catGrad)"/>
+      <path d="M 612,304 L 602,278 L 632,296 Z" fill="#33262f"/>
+      <g class="cat-ear-r">
+        <path d="M 660,296 L 700,270 L 680,312 Z" fill="url(#catGrad)"/>
+        <path d="M 664,298 L 692,278 L 678,306 Z" fill="#33262f"/>
+      </g>
+
+      <ellipse cx="642" cy="341" rx="50" ry="47" fill="url(#catGrad)"/>
+
+      <path d="M 594,330 C 591,346 593,362 600,376" fill="none" stroke="#8e8398" stroke-opacity=".22" stroke-width="3" filter="url(#softSm)"/>
+
+      <!-- 目 -->
+      <g class="cat-eyes">
+        <ellipse cx="618" cy="346" rx="14.5" ry="16" fill="url(#jijiEye)"/>
+        <ellipse cx="662" cy="344" rx="14.5" ry="16" fill="url(#jijiEye)"/>
+        <g class="cat-pupils">
+          <circle cx="615" cy="347" r="4.6" fill="#14141c"/>
+          <circle cx="659" cy="345" r="4.6" fill="#14141c"/>
+          <circle cx="612.5" cy="342" r="1.9" fill="#ffffff" opacity=".9"/>
+          <circle cx="656.5" cy="340" r="1.9" fill="#ffffff" opacity=".9"/>
+        </g>
+      </g>
+
+      <!-- 鼻・口 -->
+      <path d="M 637,368 L 645,368 L 641,373 Z" fill="#c98a96"/>
+      <path d="M 641,373 Q 638,378 633,376 M 641,373 Q 644,378 649,376" fill="none" stroke="#8a7480" stroke-width="1.5" stroke-linecap="round"/>
+
+      <!-- ひげ -->
+      <g stroke="#d8cdc0" stroke-opacity=".4" stroke-width="1.2" stroke-linecap="round">
+        <path d="M 626,376 L 590,370"/>
+        <path d="M 625,380 L 587,381"/>
+        <path d="M 626,384 L 591,394"/>
+        <path d="M 656,374 L 692,368"/>
+        <path d="M 657,378 L 695,379"/>
+        <path d="M 656,382 L 691,392"/>
+      </g>
+    </g>
+  </g>
+  </g>
+
+  <!-- 周辺減光 -->
+  <rect width="900" height="620" fill="url(#vignette)" pointer-events="none"/>
+</svg>
+</div>
+
+<script>
+/* ================= 3D金魚 & 猫のちょっかい ================= */
+(function () {
+  'use strict';
+
+  var svg = document.querySelector('svg');
+  var cv  = document.getElementById('fishCanvas');
+  if (!svg || !cv) return;
+  var ctx = cv.getContext('2d');
+  var VBW = 900, VBH = 620;
+  var CX = 320, CY = 352, FOCAL = 780;
+  /* 描画は鉢のまわりだけ（キャンバスを小さく保つ） */
+  var BOX = 340, BOX_X = 155, BOX_Y = 185;
+
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+  /* ---------- 解像度 ---------- */
+  function resize() {
+    var r = svg.getBoundingClientRect();
+    var s = Math.max(r.width / VBW, r.height / VBH) * (window.devicePixelRatio || 1);
+    var k = clamp(s, 1, 1.35);
+    var w = Math.round(BOX * k), h = Math.round(BOX * k);
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    var sc = w / BOX;
+    ctx.setTransform(sc, 0, 0, sc, -BOX_X * sc, -BOX_Y * sc);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  /* ---------- 光 ---------- */
+  var lx0 = -0.38, ly0 = 0.80, lz0 = 0.46;
+  var ll = Math.sqrt(lx0 * lx0 + ly0 * ly0 + lz0 * lz0);
+  var LX = lx0 / ll, LY = ly0 / ll, LZ = lz0 / ll;
+  var hx0 = LX, hy0 = LY, hz0 = LZ + 1;
+  var hl = Math.sqrt(hx0 * hx0 + hy0 * hy0 + hz0 * hz0);
+  var HX = hx0 / hl, HY = hy0 / hl, HZ = hz0 / hl;
+
+  var haze = 0;
+
+  function shade(nx, ny, nz, t) {
+    var r, g, b, k;
+    if (t < 0.55) { k = Math.pow(t / 0.55, 0.55); r = 255; g = 216 + (132 - 216) * k; b = 166 + (42 - 166) * k; }
+    else { k = (t - 0.55) / 0.45; r = 255 + (214 - 255) * k; g = 132 + (66 - 132) * k; b = 42 + (8 - 42) * k; }
+    var d = nx * LX + ny * LY + nz * LZ; if (d < 0) d = 0;
+    var bn = ny < 0 ? -ny : 0;
+    var sh = 0.80 + 0.34 * d + 0.16 * bn;
+    var sp = nx * HX + ny * HY + nz * HZ; sp = sp > 0 ? Math.pow(sp, 34) * 0.26 : 0;
+    r = r * sh + 255 * sp; g = g * sh + 255 * sp; b = b * sh + 255 * sp;
+    if (haze > 0) {
+      r = r * (1 - haze) + 138 * haze;
+      g = g * (1 - haze) + 196 * haze;
+      b = b * (1 - haze) + 220 * haze;
+    }
+    return 'rgb(' + (r > 255 ? 255 : r | 0) + ',' + (g > 255 ? 255 : g | 0) + ',' + (b > 255 ? 255 : b | 0) + ')';
+  }
+
+  /* ---------- 体の形 ---------- */
+  var PROF = [[0, 0.14], [0.05, 0.45], [0.12, 0.70], [0.22, 0.88], [0.34, 1.00],
+              [0.48, 0.98], [0.62, 0.90], [0.76, 0.76], [0.88, 0.56], [1.00, 0.30]];
+  function prof(s) {
+    for (var i = 1; i < PROF.length; i++) {
+      if (s <= PROF[i][0]) {
+        var a = PROF[i - 1], b = PROF[i];
+        var t = (s - a[0]) / (b[0] - a[0]);
+        return a[1] + (b[1] - a[1]) * t;
+      }
+    }
+    return 0.30;
+  }
+
+  var NOSE = 31, LEN = 58, RY = 18.5, RZ = 13, NU = 16, NV = 10;
+  var RING = [];
+  for (var ri = 0; ri <= NU; ri++) {
+    var rs = ri / NU, rp = prof(rs);
+    RING.push({ s: rs, x: NOSE - LEN * rs, ry: RY * rp, rz: RZ * rp });
+  }
+
+  var FIN = {
+    tail:   [[-24, 4.1], [-31.4, 11.5], [-40.4, 19.7], [-50.2, 22.1], [-55.2, 23], [-56.8, 18], [-51.9, 12.3], [-47, 6.6], [-43.7, 2.5], [-42.9, 0],
+             [-43.7, -2.5], [-47, -6.6], [-51.9, -12.3], [-56.8, -18], [-55.2, -23], [-50.2, -22.1], [-40.4, -19.7], [-31.4, -11.5], [-24, -4.1]],
+    dorsal: [[19, 13.5], [20, 22], [17, 30], [10, 31.5], [1, 33], [-10, 27], [-17, 19], [-13, 18], [-6, 16], [0, 14.5], [7, 13.5], [13, 13]],
+    anal:   [[-17, -11.5], [-24, -14], [-29, -20.5], [-24, -23.5], [-18, -25], [-14, -19], [-13, -14]],
+    pelvic: [[0, -15.5], [-6, -19], [-9, -25.5], [-3, -26.5], [1, -26.5], [4, -21], [5, -16]],
+    pect:   [[13, 2], [5, 4], [-4, 10], [-6, 15], [-7.5, 18.5], [-3, 20], [0, 17.5], [7, 13.5], [13, 8], [15.5, 4.5], [15, 3.5], [14, 2.5]]
+  };
+
+  var NP = (NU + 1) * NV;
+  var spx = new Float32Array(NP), spy = new Float32Array(NP);
+  var swx = new Float32Array(NP), swy = new Float32Array(NP), swz = new Float32Array(NP);
+  var rcx = new Float32Array(NU + 1), rcy = new Float32Array(NU + 1), rcz = new Float32Array(NU + 1);
+
+  /* 同じ色の面をまとめて1回で塗る（呼び出し回数を減らす） */
+  var NB = 64;
+  var bPaths = new Array(NB), bCols = new Array(NB);
+
+  /* ---------- 金魚の状態 ---------- */
+  var FISH = [
+    { cx: 320, cy: 400, rx: 62, ry: 12, per: 17.0, p2: 1.2, size: 1.00, theta: 0.5, wph: 0.0, sx: 320, sy: 400 },
+    { cx: 318, cy: 374, rx: 86, ry: 10, per: 12.5, p2: 0.4, size: 0.72, theta: 2.6, wph: 2.1, sx: 318, sy: 374 },
+    { cx: 322, cy: 428, rx: 90, ry: 9,  per: 9.5,  p2: 2.1, size: 0.55, theta: 4.4, wph: 4.3, sx: 322, sy: 428 }
+  ];
+
+  var panic = 0;
+
+  /* ---------- 1匹を描く ---------- */
+  function drawFish(f, t) {
+    var S = f.size;
+    var th = f.theta, zz = Math.sin(th);
+
+    var px = f.cx + f.rx * Math.cos(th) - 18 * panic;
+    var py = f.cy + f.ry * Math.sin(2 * th + f.p2) - 8 * zz + 7 * panic;
+    var pz = zz * 62;
+
+    var vx = -f.rx * Math.sin(th);
+    var vy = 2 * f.ry * Math.cos(2 * th + f.p2) - 8 * Math.cos(th);
+    var vz = Math.cos(th) * 62;
+
+    /* 前方向（Y上・Z手前） */
+    var fx = vx, fy = -vy, fz = vz;
+    var fl = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
+    fx /= fl; fy /= fl; fz /= fl;
+
+    /* 右方向 = f × up */
+    var rx = -fz, ry = 0, rz = fx;
+    var rl = Math.sqrt(rx * rx + rz * rz);
+    if (rl < 0.08) { rx = 0; rz = 1; rl = 1; }
+    rx /= rl; rz /= rl;
+
+    /* 上方向 = right × f */
+    var ux = ry * fz - rz * fy;
+    var uy = rz * fx - rx * fz;
+    var uz = rx * fy - ry * fx;
+
+    var BX = px - CX, BY = CY - py, BZ = pz;
+
+    f.sx = px; f.sy = py; f.sz = pz;
+    haze = clamp((0.9 - zz) * 0.5, 0, 1) * 0.10;
+
+    /* ローカル → 画面 */
+    function wp(a, b, c) {
+      var x = BX + (a * fx + b * ux + c * rx) * S;
+      var y = BY + (a * fy + b * uy + c * ry) * S;
+      var z = BZ + (a * fz + b * uz + c * rz) * S;
+      var k = FOCAL / (FOCAL - z);
+      return [CX + x * k, CY - y * k, x, y, z, k];
+    }
+
+    /* ===== ひれ（体より奥） ===== */
+    var phase = t * 5.0 + f.wph;
+    var waveTail = 4.0 * Math.sin(6.0 - phase);
+
+    drawFin(FIN.tail, -24, 0, waveTail, 7.5 * Math.sin(6.0 - phase + 1.0), 0.72);
+    drawFin(FIN.dorsal, 0, 14, 0, 0, 0.85);
+    drawFin(FIN.anal, -15, -13, 0, 0, 0.62);
+    drawFin(FIN.pelvic, 0, -16, 0, 0, 0.62);
+
+    /* 奥の胸びれ */
+    var zP = RZ * prof(0.31) * 0.95;
+    var nearRight = rz > 0;
+    if (!nearRight) drawFin(FIN.pect, 14, 3, zP, 3, 0.55);
+
+    /* 目の位置（手前側だけ描く） */
+    var sEye = 0.155, xEye = NOSE - LEN * sEye, rEye = prof(sEye);
+    var zEye = RZ * rEye * 0.94, yEye = RY * rEye * 0.40;
+    /* ===== 体 ===== */
+    for (var i2 = 0; i2 <= NU; i2++) {
+      var R = RING[i2];
+      var zw = 4.0 * Math.sin(R.s * 6.0 - phase) * Math.pow(R.s, 1.7);
+      var ax = R.x, az = zw;
+      rcx[i2] = BX + (ax * fx + az * rx) * S;
+      rcy[i2] = BY + (ax * fy + az * ry) * S;
+      rcz[i2] = BZ + (ax * fz + az * rz) * S;
+      for (var j2 = 0; j2 < NV; j2++) {
+        var a2 = (j2 / NV) * Math.PI * 2;
+        var ly = R.ry * Math.sin(a2);
+        var lz = R.rz * Math.cos(a2) + zw;
+        var x = BX + (ax * fx + ly * ux + lz * rx) * S;
+        var y = BY + (ax * fy + ly * uy + lz * ry) * S;
+        var z = BZ + (ax * fz + ly * uz + lz * rz) * S;
+        var k = FOCAL / (FOCAL - z);
+        var id = i2 * NV + j2;
+        spx[id] = CX + x * k; spy[id] = CY - y * k;
+        swx[id] = x; swy[id] = y; swz[id] = z;
+      }
+    }
+
+    for (var b0 = 0; b0 < NB; b0++) bPaths[b0] = null;
+
+    for (var i3 = 0; i3 < NU; i3++) {
+      for (var j3 = 0; j3 < NV; j3++) {
+        var j4 = (j3 + 1) % NV;
+        var q0 = i3 * NV + j3, q1 = i3 * NV + j4, q2 = (i3 + 1) * NV + j4, q3 = (i3 + 1) * NV + j3;
+        var ax2 = swx[q0], ay3 = swy[q0], az2 = swz[q0];
+        var e1x = swx[q1] - ax2, e1y = swy[q1] - ay3, e1z = swz[q1] - az2;
+        var e2x = swx[q3] - ax2, e2y = swy[q3] - ay3, e2z = swz[q3] - az2;
+        var nx = e1y * e2z - e1z * e2y;
+        var ny = e1z * e2x - e1x * e2z;
+        var nz = e1x * e2y - e1y * e2x;
+        var ox = ax2 - rcx[i3], oy = ay3 - rcy[i3], oz = az2 - rcz[i3];
+        if (nx * ox + ny * oy + nz * oz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+        var nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        nx /= nl; ny /= nl; nz /= nl;
+        if (nz <= 0.002) continue;
+
+        var am = ((j3 + 0.5) / NV) * Math.PI * 2;
+        var tcol = 0.5 + 0.5 * RING[i3].ry * Math.sin(am) / RY;
+        if (tcol < 0) tcol = 0; else if (tcol > 1) tcol = 1;
+        var lit = nx * LX + ny * LY + nz * LZ; if (lit < 0) lit = 0;
+
+        var bi = ((tcol * 7.999) | 0) * 8 + ((lit * 7.999) | 0);
+        var bp = bPaths[bi];
+        if (!bp) { bp = bPaths[bi] = new Path2D(); bCols[bi] = shade(nx, ny, nz, tcol); }
+
+        /* 継ぎ目が出ないよう、面を中心からほんの少し外へ広げる */
+        var cx4 = (spx[q0] + spx[q1] + spx[q2] + spx[q3]) * 0.25;
+        var cy4 = (spy[q0] + spy[q1] + spy[q2] + spy[q3]) * 0.25;
+        var dx4 = spx[q0] - cx4, dy4 = spy[q0] - cy4;
+        var k4 = 1 + 0.5 / (Math.sqrt(dx4 * dx4 + dy4 * dy4) || 1);
+        bp.moveTo(cx4 + dx4 * k4, cy4 + dy4 * k4);
+        dx4 = spx[q1] - cx4; dy4 = spy[q1] - cy4;
+        k4 = 1 + 0.5 / (Math.sqrt(dx4 * dx4 + dy4 * dy4) || 1);
+        bp.lineTo(cx4 + dx4 * k4, cy4 + dy4 * k4);
+        dx4 = spx[q2] - cx4; dy4 = spy[q2] - cy4;
+        k4 = 1 + 0.5 / (Math.sqrt(dx4 * dx4 + dy4 * dy4) || 1);
+        bp.lineTo(cx4 + dx4 * k4, cy4 + dy4 * k4);
+        dx4 = spx[q3] - cx4; dy4 = spy[q3] - cy4;
+        k4 = 1 + 0.5 / (Math.sqrt(dx4 * dx4 + dy4 * dy4) || 1);
+        bp.lineTo(cx4 + dx4 * k4, cy4 + dy4 * k4);
+        bp.closePath();
+      }
+    }
+
+    for (var b1 = 0; b1 < NB; b1++) {
+      if (bPaths[b1]) { ctx.fillStyle = bCols[b1]; ctx.fill(bPaths[b1]); }
+    }
+
+    /* ===== 手前のひれ・目・エラ ===== */
+    if (nearRight) drawFin(FIN.pect, 14, 3, zP, 3, 0.9);
+    else drawFin(FIN.pect, 14, 3, -zP, -3, 0.9);
+
+    drawEye(nearRight ? 1 : -1);
+    drawGill(nearRight ? 1 : -1);
+
+    /* 口（パクパク） */
+    if (fz > -0.2) {
+      var mOpen = 0.5 + 0.5 * Math.sin(t * 8.4 + f.wph * 2.3);
+      var mo = wp(28.8, 0.4, 0);
+      var mk = S * mo[5];
+      var mw = 3.1 * mk;
+      var mh = (0.45 + 3.1 * mOpen) * mk;
+      ctx.beginPath();
+      ctx.ellipse(mo[0], mo[1], mw, mh, 0, 0, 6.2832);
+      ctx.fillStyle = 'rgba(104,30,6,' + (0.55 + 0.35 * mOpen).toFixed(2) + ')';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(176,74,22,.55)';
+      ctx.lineWidth = Math.max(0.5, 0.55 * mk);
+      ctx.stroke();
+    }
+
+    /* ---------- ひれ ---------- */
+    function drawFin(poly, cx0, cy0, zBase, zTip, alpha) {
+      var n = poly.length, pts = [], maxd = 0.001, q;
+      for (q = 0; q < n; q++) {
+        var dx = poly[q][0] - cx0, dy = poly[q][1] - cy0;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d > maxd) maxd = d;
+      }
+      for (q = 0; q < n; q++) {
+        var dx2 = poly[q][0] - cx0, dy2 = poly[q][1] - cy0;
+        var d2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) / maxd;
+        pts.push(wp(poly[q][0], poly[q][1], zBase + zTip * d2 * d2));
+      }
+      var base = wp(cx0, cy0, zBase);
+
+      /* 法線から明るさ */
+      var p0 = pts[0], p1 = pts[(n >> 1)], p2 = pts[n - 1];
+      var e1x = p1[2] - p0[2], e1y = p1[3] - p0[3], e1z = p1[4] - p0[4];
+      var e2x = p2[2] - p0[2], e2y = p2[3] - p0[3], e2z = p2[4] - p0[4];
+      var nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+      var nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      var dd = Math.abs((nx * LX + ny * LY + nz * LZ) / nl);
+      var lit = 0.86 + 0.26 * dd;
+
+      var L2 = lit > 1 ? 1 : lit;
+      var fr = (252 * L2) | 0, fg = (152 * L2) | 0, fb = (72 * L2) | 0;
+
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (q = 1; q < n; q++) ctx.lineTo(pts[q][0], pts[q][1]);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(' + fr + ',' + fg + ',' + fb + ',' + alpha + ')';
+      ctx.fill();
+
+      /* ひれの筋（1回にまとめる） */
+      var vp = new Path2D();
+      for (q = 0; q < n; q += 3) { vp.moveTo(base[0], base[1]); vp.lineTo(pts[q][0], pts[q][1]); }
+      ctx.strokeStyle = 'rgba(216,84,22,.3)';
+      ctx.lineWidth = 0.55;
+      ctx.stroke(vp);
+      ctx.globalAlpha = 1;
+    }
+
+    /* ---------- 目 ---------- */
+    function drawEye(side) {
+      var e = wp(xEye, yEye, zEye * side);
+      var rad = 3.6 * S * e[5];
+      ctx.beginPath();
+      ctx.arc(e[0], e[1], rad * 1.12, 0, 6.2832);
+      ctx.fillStyle = '#c9660f';
+      ctx.fill();
+
+      var g2 = ctx.createRadialGradient(e[0] - rad * 0.28, e[1] - rad * 0.32, rad * 0.08, e[0], e[1], rad);
+      g2.addColorStop(0, '#ffeec4');
+      g2.addColorStop(0.5, '#e8962e');
+      g2.addColorStop(1, '#a04a08');
+      ctx.beginPath();
+      ctx.arc(e[0], e[1], rad, 0, 6.2832);
+      ctx.fillStyle = g2;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(e[0] + rad * 0.08, e[1] + rad * 0.05, rad * 0.52, 0, 6.2832);
+      ctx.fillStyle = '#1b0d05';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(e[0] - rad * 0.33, e[1] - rad * 0.36, rad * 0.24, 0, 6.2832);
+      ctx.fillStyle = 'rgba(255,255,255,.92)';
+      ctx.fill();
+    }
+
+    /* ---------- エラ ---------- */
+    function drawGill(side) {
+      var sG = 0.245, xG = NOSE - LEN * sG, rG = prof(sG);
+      var zwG = 4.0 * Math.sin(sG * 6.0 - phase) * Math.pow(sG, 1.7);
+      var first = true;
+      ctx.beginPath();
+      for (var a = -76; a <= 76; a += 5) {
+        var ar = a * Math.PI / 180;
+        var yv = RY * rG * Math.sin(ar);
+        var zv = RZ * rG * Math.cos(ar) * side + zwG;
+        var p = wp(xG + 1.8 * Math.cos(ar), yv, zv);
+        if (first) { ctx.moveTo(p[0], p[1]); first = false; }
+        else ctx.lineTo(p[0], p[1]);
+      }
+      ctx.strokeStyle = 'rgba(205,72,16,.42)';
+      ctx.lineWidth = Math.max(0.6, 0.9 * S);
+      ctx.stroke();
+    }
+  }
+
+  /* ---------- 猫のちょっかい ---------- */
+  var cat = document.querySelector('.cat');
+  var pupils = document.querySelector('.cat-pupils');
+  var pupilDX = 0, pupilDY = 0;
+  var teasing = false, nextTease = 4.5;
+
+  function updateCat(t, dt) {
+    if (pupils) {
+      var ex = 640, ey = 345, best = null, bd = 1e9;
+      for (var i = 0; i < FISH.length; i++) {
+        var dx = FISH[i].sx - ex, dy = FISH[i].sy - ey;
+        var d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; best = FISH[i]; }
+      }
+      var tx = 0, ty = 0;
+      if (best) {
+        tx = clamp((best.sx - ex) * 0.075, -4.5, 4.5);
+        ty = clamp((best.sy - ey) * 0.075, -3.5, 3.5);
+      }
+      var k = Math.min(1, dt * 5);
+      pupilDX += (tx - pupilDX) * k;
+      pupilDY += (ty - pupilDY) * k;
+      pupils.style.transform = 'translate(' + pupilDX.toFixed(2) + 'px,' + pupilDY.toFixed(2) + 'px)';
+    }
+
+    if (cat && !teasing && t > nextTease) {
+      teasing = true;
+      cat.classList.add('tease');
+      document.body.classList.add('teasing');
+      setTimeout(function () { panic = 1.0; }, 470);
+      setTimeout(function () { if (panic < 0.7) panic = 0.7; }, 900);
+      setTimeout(function () {
+        cat.classList.remove('tease');
+        document.body.classList.remove('teasing');
+        teasing = false;
+        nextTease = t + 6.5 + Math.random() * 5;
+      }, 1750);
+    }
+  }
+
+  /* ---------- メインループ ---------- */
+  var last = 0, t0 = 0, first = true, lastDraw = 0;
+
+  function frame(now) {
+    if (first) { resize(); first = false; }
+    if (!t0) { t0 = now; last = now; }
+    var dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.06) dt = 0.06;
+    var t = (now - t0) / 1000;
+
+    panic = Math.max(0, panic - dt * 0.85);
+
+    for (var i = 0; i < FISH.length; i++) {
+      FISH[i].theta += (Math.PI * 2 / FISH[i].per) * dt * (1 + 2.4 * panic);
+    }
+
+    /* 金魚の再描画は約30コマ/秒まで（動きは遅いので十分なめらか） */
+    if (now - lastDraw >= 28) {
+      lastDraw = now;
+      ctx.clearRect(BOX_X, BOX_Y, BOX, BOX);
+      var order = FISH.slice().sort(function (a, b) { return Math.sin(a.theta) - Math.sin(b.theta); });
+      for (var j = 0; j < order.length; j++) drawFish(order[j], t);
+    }
+
+    updateCat(t, dt);
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
